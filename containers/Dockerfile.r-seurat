@@ -1,0 +1,57 @@
+# ==============================================================================
+# Dockerfile — R-side preprocessing (PREP_R_SEURAT)
+# ==============================================================================
+#
+# This Dockerfile is consumed by Sequera Containers (Wave) to build the
+# `pals-r-seurat:1.0.0` image that runs the PREP_R_SEURAT process.
+#
+# Source of truth:  containers/env-r-seurat.yml
+# Image registry:  cr.seqera.io/dmouzo/pals-r-seurat:1.0.0
+# Used by:         modules/local/prep_r_seurat.nf  (params.container_r1)
+#
+# Build context expected by Wave:
+#   containers/
+#     env-r-seurat.yml
+#     Dockerfile.r-seurat       <-- this file
+#
+# Post-conda RUN steps install the Bioconductor-only packages that conda cannot
+# resolve (Signac, BiocManager) and the frozen SeuratDisk CRAN version.
+# ==============================================================================
+
+FROM mambaorg/micromamba:1.5.10-jammy
+
+USER root
+
+# System libraries required by SeuratDisk, hdf5r, and Signac at runtime.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        pandoc \
+        libfontconfig1 \
+        libxt-dev \
+        libssl-dev \
+        libcurl4-openssl-dev \
+        libxml2-dev \
+        libzmq3-dev \
+        libhdf5-dev \
+        libgit2-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+USER mambauser
+
+# ---- 1. Conda environment from env-r-seurat.yml ----
+COPY --chown=$MAMBA_USER:$MAMBA_USER env-r-seurat.yml /tmp/env-r-seurat.yml
+RUN micromamba install -y -n base -f /tmp/env-r-seurat.yml && \
+    micromamba clean -a -y
+
+# ---- 2. CRAN-only post-conda installs (BiocManager, SeuratDisk) ----
+RUN Rscript -e 'install.packages("BiocManager", repos="https://cloud.r-project.org")' && \
+    Rscript -e 'remotes::install_version("SeuratDisk", version="0.0.9019", repos="https://cloud.r-project.org", upgrade="never")'
+
+# ---- 3. Bioconductor-only post-conda install (Signac) ----
+# Signac is NOT in bioconda as of June 2026. The version below is the one
+# declared in AGENTS.md/CHANGELOG.md (1.14.0) and is installed against
+# Bioconductor 3.19 (the version compatible with R 4.4.x).
+RUN Rscript -e 'BiocManager::install("Signac", update=FALSE, ask=FALSE, version="3.19")'
+
+# ---- 4. Workspace and entrypoint ----
+WORKDIR /workspace
+ENTRYPOINT ["/usr/local/bin/_entrypoint.sh", "Rscript"]

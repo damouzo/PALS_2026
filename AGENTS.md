@@ -18,14 +18,17 @@ It is surgically optimized for a **1-hour Live-Demo / Masterclass**. It runs an 
 
 scMultiome-GRN/
 ├── bin/                     # Clean executable scripts called by Nextflow processes
-│   ├── GRN_dataProcess.R    # ATAC/RNA preprocessing & Cicero co-accessibility integration
-│   └── GRN_analysis.py      # Network inference with CellOracle & perturbation simulations
+│   ├── GRN_seurat.R         # Stage 1 R: scRNA + scATAC preprocessing (Seurat + Signac + SeuratDisk)
+│   ├── GRN_cicero.R         # Stage 2 R: Cicero co-accessibility (cicero + monocle3 + EnsDb.Mmusculus.v79)
+│   └── GRN_analysis.py      # Stage 3 Python: Network inference with CellOracle & perturbation simulations
 ├── conf/                    # Nextflow configuration files
 │   ├── base.config          # Default resource allocation profiles
 │   └── modules.config       # Process-specific publishDir directives and CLI argument mappings
-├── containers/
-│   ├── Dockerfile           # PRIMARY — Unified R + Python environment (used by GitHub Actions/Docker)
-│   └── environment.yml      # Unified Conda environment definition for local development/fallback
+├── containers/              # Sequera Wave sources for the R-side images
+│   ├── env-r-seurat.yml     # Conda spec for pals-r-seurat (R 4.4.3 + Seurat + Signac + SeuratDisk)
+│   ├── env-r-bioc.yml       # Conda spec for pals-r-bioc (R 4.4.3 + BiocManager → cicero/monocle3/EnsDb)
+│   ├── Dockerfile.r-seurat  # Post-conda installs (BiocManager, Signac, SeuratDisk) for pals-r-seurat
+│   └── Dockerfile.r-bioc    # Post-conda installs (BiocManager → cicero/monocle3/EnsDb) for pals-r-bioc
 ├── data_demo/               # Everything related to test data: download, subsample, docs
 │   ├── raw/                 # Raw 10x assets (gitignored, ~6.5 GB)
 │   ├── processed/           # Subsampled outputs (gitignored, generated)
@@ -33,11 +36,12 @@ scMultiome-GRN/
 │   ├── subsample_dataset.py # Scanpy-based subsampler (microglia from 10x clusters)
 │   ├── README.md            # Biological + technical documentation
 │   └── synthetic/           # Optional ultra-tiny synthetic object (smoke tests)
-├── modules/local/           # Nextflow DSL2 process definitions (one directory per process)
-│   ├── preprocess_atac.nf   # Wraps the R preprocessing script execution
-│   └── infer_grn.nf         # Wraps the Python network inference script execution
+├── modules/local/           # Nextflow DSL2 process definitions (one file per process)
+│   ├── prep_r_seurat.nf     # PREP_R_SEURAT: R 4.4.3 + Seurat + Signac + SeuratDisk
+│   ├── prep_r_cicero.nf     # PREP_R_CICERO: R 4.4.3 + cicero + monocle3 + EnsDb.Mmusculus.v79
+│   └── infer_grn.nf         # INFER_GRN: Python 3.11 + CellOracle + GimmeMotifs
 ├── workflows/
-│   └── multiome_grn.nf      # Workflow orchestration and channel binding (R -> Python)
+│   └── multiome_grn.nf      # Workflow orchestration: R -> R -> Python chain
 ├── main.nf                  # Pipeline entry point
 └── nextflow.config          # Primary Nextflow configuration (imports conf/)
 
@@ -63,40 +67,80 @@ The biological test dataset (`data_demo/processed/microglia_dam_demo.rds`) must 
 ## Container & CI/CD
 
 ### Source of Truth
-The **Dockerfile** (`containers/Dockerfile`) is the authoritative environment definition:
-- Integrates all required R bioinformatic packages and Python analytical frameworks.
-- Automated via **GitHub Actions**: The image builds and pushes automatically to GitHub Container Registry (GHCR) at `ghcr.io/dmouzo/scmultiome-grn` on every push to `main`, on `pull_request` (build only, no push), and on `v*.*.*` tags.
-- The `environment.yml` file is maintained purely for local development flexibility to bootstrap the environment on a laptop without launching Docker.
+The pipeline uses **three pre-built container images**, one per process.
+There is no in-repo Dockerfile and no in-CI image build step. The R-side
+images are built with **Sequera Wave** (UI-driven conda solver on beefy
+infrastructure); the Python-side image is a re-tag of
+`kenjikamimoto126/celloracle_ubuntu:0.18.0` published on **GHCR**.
 
-### Pinning Strategy (validated June 2026)
-- `r-base=4.4.3` (r44 build-string; the only base version that resolves
-  against the modern r-seurat / r-signac stack on conda-forge).
-- `r-seurat=5.1.0` INCLUDES SeuratWrappers since Seurat v5. The legacy
-  `r-seuratwrappers` package is abandoned on conda-forge; do NOT add it
-  back. This was the original cause of the broken build in Phase 7.
-- `r-signac=1.14.0` + `r-ggnewscale` (the latter is required for
-  modern coverage plots and was missing in the legacy image).
-- `r-seuratdisk` is NOT installable from conda-forge for the r44
-  build-string (0.0.9019 dates from 2021 and depends on r-spatstat<2.0
-  which has no r44-compatible build). It is installed from CRAN in
-  the Dockerfile post-conda RUN. `GRN_dataProcess.R` has a fallback
-  to .rds sidecars if SeuratDisk is missing.
-- `r-monocle3` and `r-cicero` are Bioconductor-only; installed via
-  `BiocManager::install(..., version = "3.19")` post-conda.
-- `celloracle==0.18.0` + `gimmemotifs==3.0.0` mirror the upstream
-  `kenjikamimoto126/celloracle_ubuntu:0.18.0` image (used as a pin
-  reference, not as a base).
+- **`pals-r-seurat`** (`cr.seqera.io/dmouzo/pals-r-seurat:1.0.0`):
+  R 4.4.3 + Seurat 5.4.0 + Signac 1.14.0 + SeuratDisk 0.0.9019 +
+  utility R packages (tidyverse, matrix, rccp*, hdf5r, optparse) +
+  Bioconductor base (Biobase, S4Vectors, IRanges, GenomicRanges, etc.).
+  Used by `PREP_R_SEURAT`.
+- **`pals-r-bioc`** (`cr.seqera.io/dmouzo/pals-r-bioc:1.0.0`):
+  R 4.4.3 + minimal Bioconductor base + `BiocManager::install` →
+  cicero + monocle3 + EnsDb.Mmusculus.v79. Used by `PREP_R_CICERO`.
+- **`pals-python-grn`** (`ghcr.io/dmouzo/pals-python-grn:1.0.0`):
+  Python 3.11 + celloracle 0.18.0 + scanpy + anndata +
+  gimmemotifs 0.18.3 + goatools + adjustText + scientific stack.
+  Used by `INFER_GRN`.
+
+The three image URLs are exposed as top-level Nextflow params
+(`params.container_r1`, `params.container_r2`, `params.container_py`)
+and can be overridden per run with `--container_r1 <url>`,
+`--container_r2 <url>`, `--container_py <url>`. The legacy alias
+`--container_r` is mapped to `--container_r1` for back-compat.
+The `nextflow_schema.json` documents every parameter.
+
+### Why three images (and not one)?
+After three failed CI builds (each surfacing a different solver or
+pinning issue: `r-seuratdisk` requires an older `r-spatstat`,
+`gimmemotifs` on PyPI is broken on Python 3.11+, the joint
+`r-seurat + r-signac + monocle3 + EnsDb` solver does not converge on
+libmamba), we split the R-side environment into two specialized images
+so the conda solver stays tractable. The Python-side environment is a
+re-tag of the upstream `kenjikamimoto126/celloracle_ubuntu:0.18.0` image
+so we never re-derive the (extremely fragile) `gimmemotifs`-on-Py3.11
+installation ourselves.
+
+### Why Sequera Containers (and not a self-built image in CI)?
+The conda solver for the R stack requires a beefier environment than
+the GitHub Actions runner provides. Sequera Wave runs the solver on
+its own infrastructure and the build is inspectable step-by-step. The
+CI workflow now just `docker pull`s the three images and runs the
+pipeline.
+
+### CI
+- `.github/workflows/ci-tests.yml`:
+  - `lint` job: `nextflow lint .` on every push.
+  - `smoke` job: pulls the three containers (2 from Sequera Wave, 1
+    from GHCR), builds the synthetic test dataset inside the
+    R-seurat image, then runs the full pipeline via
+    `nextflow run main.nf -profile test,docker`.
+- There is no `docker-publish.yml` workflow (we no longer build images
+  in CI).
 
 ### Local Development
-- Building the full image locally requires ≥8 GB RAM and ~20 min on a
-  modern laptop. The `mambaorg/micromamba:1.5.10-jammy` base image is
-  used for fast R+Python installation via `micromamba install`.
-- The Dockerfile ends with a `RUN` that imports every required R and
-  Python package. If any dependency is missing the image WILL NOT be
-  pushed to GHCR — the GitHub Actions job fails before the push step.
-- For local-only iteration (no Docker), bootstrap a conda env from
-  `environment.yml` with `mamba env create -f containers/environment.yml`
-  then activate it and run Nextflow with `-profile conda`.
+- For local execution with the three images, no setup is needed beyond
+  `docker pull` and a working `nextflow` install:
+  ```bash
+  docker pull cr.seqera.io/dmouzo/pals-r-seurat:1.0.0
+  docker pull cr.seqera.io/dmouzo/pals-r-bioc:1.0.0
+  docker pull ghcr.io/dmouzo/pals-python-grn:1.0.0
+  nextflow run main.nf -profile test,docker
+  ```
+- For local iteration on a single process, override the container URL
+  with a local tag:
+  ```bash
+  nextflow run main.nf -profile test,docker \
+      --container_r1 'docker://my-r-seurat:dev' \
+      --container_r2 'docker://my-r-bioc:dev' \
+      --container_py 'docker://my-python-grn:dev'
+  ```
+- The `standard` profile (no Docker) requires R 4.4.x and Python 3.11
+  installed on the host with the same packages. Not recommended for
+  the demo — the Sequera + GHCR images are the supported runtime.
 
 ---
 
@@ -126,13 +170,15 @@ Nextflow Workflow & DSL2
 
     Nextflow channels must be named in ch_camelCase.
 
-R Scripts (bin/GRN_dataProcess.R)
+R Scripts (bin/GRN_seurat.R, bin/GRN_cicero.R)
 
-    Must use optparse or argparse to cleanly capture --input_seurat and --outdir.
+    Must use optparse or argparse to cleanly capture their CLI flags.
 
     Must clear Seurat objects from memory after exporting structural data to prevent Out-Of-Memory (OOM) errors on limited local laptop hardware.
 
     Must generate deterministic, unquoted CSV tables required as inputs for the Python step.
+
+    GRN_cicero.R must use `EnsDb.Mmusculus.v79` (NOT `EnsDb.Hsapiens.v86`) since the demo dataset is mm10/mouse.
 
 Python Scripts (bin/GRN_analysis.py)
 
@@ -144,9 +190,13 @@ Workflow Data Flow
 
      mini_seurat.rds (Input Channel)
                ↓
-     [ PREPROCESS_ATAC ]  <--- (R Process: Signac / Cicero)
+     [ PREP_R_SEURAT ]   <--- (R Process: Seurat + Signac + SeuratDisk)
+        /        |        \
+   rna.h5ad  atac.h5ad  seurat_object.rds
+        \        |        /
+     [ PREP_R_CICERO ]   <--- (R Process: cicero + monocle3 + EnsDb.Mmusculus.v79)
         /           \
- all_peaks.csv     cicero_connections.csv  (Data Channels)
+ all_peaks.csv     cicero_connections.csv
         \           /
        [ INFER_GRN ]      <--- (Python Process: CellOracle / params.percentile)
                ↓

@@ -6,22 +6,17 @@
 #
 # Steps:
 #   1. Lint every Nextflow script (cheap, no execution).
-#   2. Build the test dataset (synthetic mini Seurat object).
-#   3. Smoke-run the pipeline end-to-end in synthetic mode.
-#   4. Assert the key output files exist.
+#   2. Pull the three containers (R-seurat, R-bioc, Python) from their
+#      respective registries (Sequera Wave for the R images, GHCR for Python).
+#   3. Build the synthetic test dataset INSIDE the R-seurat container.
+#   4. Validate the synthetic test dataset.
+#   5. Smoke-run the pipeline end-to-end in synthetic mode.
+#   6. Assert the key output files exist.
 #
-# Note on docker-publish dependency: this workflow does NOT depend on
-# docker-publish. GitHub Actions does not allow cross-workflow `needs:`
-# (each workflow's `jobs` namespace is private), and depending on the
-# docker-publish job from this workflow would also force the smoke test
-# to wait ~20 min for the image build on every commit, which is too slow
-# for the inner dev loop.
-#
-# Strategy: the smoke test installs micromamba on the runner and creates
-# the test env from containers/environment.yml + a separate R install
-# step for Seurat / Signac / cicero / monocle3. This is slower than
-# running inside the published image (~6 min) but does not require
-# waiting for docker-publish to finish.
+# Containers (overridable via workflow_dispatch inputs):
+#   - cr.seqera.io/dmouzo/pals-r-seurat:1.0.0   (R 4.4.3 + Seurat + Signac + SeuratDisk)
+#   - cr.seqera.io/dmouzo/pals-r-bioc:1.0.0     (R 4.4.3 + cicero + monocle3 + EnsDb)
+#   - ghcr.io/dmouzo/pals-python-grn:1.0.0      (CellOracle + GimmeMotifs)
 #
 # If anything fails, the PR cannot be merged.
 # ==============================================================================
@@ -34,6 +29,19 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      container_r1:
+        description: "R-seurat container URL (PREP_R_SEURAT). Overrides default."
+        required: false
+        default: "docker://cr.seqera.io/dmouzo/pals-r-seurat:1.0.0"
+      container_r2:
+        description: "R-bioc container URL (PREP_R_CICERO). Overrides default."
+        required: false
+        default: "docker://cr.seqera.io/dmouzo/pals-r-bioc:1.0.0"
+      container_py:
+        description: "Python container URL (INFER_GRN). Overrides default."
+        required: false
+        default: "docker://ghcr.io/dmouzo/pals-python-grn:1.0.0"
 
 jobs:
   lint:
@@ -55,7 +63,7 @@ jobs:
           fi
 
   smoke:
-    name: Pipeline smoke test (synthetic mode, conda env on runner)
+    name: Pipeline smoke test (synthetic mode, 3 containers)
     runs-on: ubuntu-latest
     needs: [lint]
     steps:
@@ -67,37 +75,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
               openjdk-17-jre-headless \
               graphviz \
-              pandoc
-
-      - name: Install micromamba
-        run: |
-          curl -L https://micro.mamba.pm/api/micromamba/linux-64/latest | \
-              sudo tar -xvj -C /usr/local bin/micromamba
-          sudo ln -sf /usr/local/bin/micromamba /usr/local/bin/mamba
-
-      - name: Create the conda env from environment.yml
-        env:
-          MAMBA_NO_LOCKFILE_INSTALL: "1"
-        run: |
-          micromamba create -y -n pals -f containers/environment.yml
-          echo "PALS_ENV_PATH=$(micromamba run -n pals which python | xargs dirname | xargs dirname)" \
-              >> $GITHUB_ENV
-
-      - name: Install R bioinformatic stack (Seurat / Signac / cicero / monocle3 / EnsDb)
-        env:
-          PATH: /usr/local/bin:/usr/bin:/bin:/opt/conda/envs/pals/bin
-        run: |
-          # CRAN: Seurat + Signac
-          micromamba run -n pals Rscript -e 'options(repos = c(CRAN = "https://cloud.r-project.org"), Ncpus = 4); \
-              install.packages(c("Seurat", "Signac"), dependencies = TRUE)'
-          # CRAN: SeuratDisk (non-fatal; pipeline has a .rds sidecar fallback)
-          micromamba run -n pals Rscript -e 'options(repos = c(CRAN = "https://cloud.r-project.org"), Ncpus = 4); \
-              tryCatch(install.packages("SeuratDisk", dependencies = TRUE), \
-                  error = function(e) message("SeuratDisk install failed (non-fatal): ", e$message))'
-          # Bioc 3.19 (aligned with R 4.4.x): monocle3, cicero, EnsDb.Mmusculus.v79
-          micromamba run -n pals Rscript -e 'options(repos = c(CRAN = "https://cloud.r-project.org"), Ncpus = 4); \
-              BiocManager::install(c("monocle3", "cicero", "EnsDb.Mmusculus.v79"), \
-                  version = "3.19", update = FALSE, ask = FALSE, dependencies = TRUE)'
+              curl
 
       - name: Install Nextflow
         run: |
@@ -105,33 +83,59 @@ jobs:
           sudo mv nextflow /usr/local/bin/
           sudo chmod +x /usr/local/bin/nextflow
 
-      - name: Build test data
+      - name: Resolve container URLs
+        id: ct
         run: |
-          micromamba run -n pals Rscript data_demo/synthetic/build_synthetic_mini_seurat.R
+          CT_R1="${{ github.event.inputs.container_r1 || 'docker://cr.seqera.io/dmouzo/pals-r-seurat:1.0.0' }}"
+          CT_R2="${{ github.event.inputs.container_r2 || 'docker://cr.seqera.io/dmouzo/pals-r-bioc:1.0.0' }}"
+          CT_PY="${{ github.event.inputs.container_py || 'docker://ghcr.io/dmouzo/pals-python-grn:1.0.0' }}"
+          echo "container_r1=${CT_R1}" >> $GITHUB_OUTPUT
+          echo "container_r2=${CT_R2}" >> $GITHUB_OUTPUT
+          echo "container_py=${CT_PY}" >> $GITHUB_OUTPUT
+          echo "Using containers:"
+          echo "  R-seurat (PREP_R_SEURAT): ${CT_R1}"
+          echo "  R-bioc   (PREP_R_CICERO): ${CT_R2}"
+          echo "  Python   (INFER_GRN):     ${CT_PY}"
 
-      - name: Validate test data
+      - name: Build test data (inside R-seurat container)
         run: |
-          micromamba run -n pals Rscript data_demo/synthetic/validate_synthetic_mini_seurat.R
+          docker run --rm \
+            -v "$(pwd):/workspace" \
+            -w /workspace \
+            -u "$(id -u):$(id -g)" \
+            "${{ steps.ct.outputs.container_r1 }}" \
+            Rscript data_demo/synthetic/build_synthetic_mini_seurat.R
+
+      - name: Validate test data (inside R-seurat container)
+        run: |
+          docker run --rm \
+            -v "$(pwd):/workspace" \
+            -w /workspace \
+            -u "$(id -u):$(id -g)" \
+            "${{ steps.ct.outputs.container_r1 }}" \
+            Rscript data_demo/synthetic/validate_synthetic_mini_seurat.R
 
       - name: Smoke run (synthetic mode)
         env:
-          PATH: /usr/local/bin:/usr/bin:/bin:/opt/conda/envs/pals/bin
           NXF_OFFLINE: "true"
           NXF_ANSI_LOG: "false"
         run: |
-          # Use the Python inside the conda env explicitly
-          PY_BIN=$(micromamba run -n pals which python)
           nextflow run main.nf \
-              -profile test \
+              -profile test,docker \
               --input data_demo/synthetic/mini_seurat.rds \
               --percentile 90 \
               --execution_mode synthetic \
-              --python "${PY_BIN}" 2>&1 | tee run.log
+              --container_r1 "${{ steps.ct.outputs.container_r1 }}" \
+              --container_r2 "${{ steps.ct.outputs.container_r2 }}" \
+              --container_py "${{ steps.ct.outputs.container_py }}" 2>&1 | tee run.log
 
       - name: Assert outputs
         run: |
-          test -s results/preprocess_atac/all_peaks.csv
-          test -s results/preprocess_atac/cicero_connections.csv
+          test -s results/prep_r_seurat/rna.h5ad
+          test -s results/prep_r_seurat/atac.h5ad
+          test -s results/prep_r_seurat/seurat_object.rds
+          test -s results/prep_r_cicero/all_peaks.csv
+          test -s results/prep_r_cicero/cicero_connections.csv
           test -s results/infer_grn/base_GRN.csv
           test -s results/infer_grn/network_scores.csv
           test -s results/infer_grn/plots/vector_field_KO_GATA1.png

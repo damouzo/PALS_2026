@@ -8,6 +8,12 @@
 //               task tag and trigger cache invalidation (the -resume demo
 //               "wow factor").
 //
+//               Runtime: a Python-only container that ships with Python 3.11
+//               + celloracle 0.18.0 + scanpy + anndata + gimmemotifs. The
+//               default image is published on Seqera Containers
+//               (cr.seqera.io/dmouzo/pals-python-grn) but can be overridden
+//               via --container_py <url>.
+//
 // Inputs:       tuple path(peaks),
 //                     path(connections),
 //                     path(rna_h5ad),
@@ -38,9 +44,7 @@ process INFER_GRN {
     label      "process_high"
     publishDir  "${params.outdir}/infer_grn", mode: "copy", overwrite: true
 
-    container  { params.container_tag
-                  ? "ghcr.io/dmouzo/scmultiome-grn:${params.container_tag}"
-                  : "ghcr.io/dmouzo/scmultiome-grn:latest" }
+    container  { params.container_py }
 
     input:
     tuple val(percentile), val(motif_db), val(genome),
@@ -84,7 +88,7 @@ process INFER_GRN {
         --p_threshold   ${p_thresh} \\
         --n_top_edges   ${n_top} \\
         --seed          ${seed} \\
-        ${args}
+        \${args}
 
     # Sanity: at least one vector-field plot must exist.
     n_plots=\$(ls plots/vector_field_KO_*.png 2>/dev/null | wc -l)

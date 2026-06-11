@@ -15,6 +15,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Multi-image container architecture** replacing the single
+  `pals-r-preprocess` image:
+  - `pals-r-seurat:1.0.0` (`cr.seqera.io/dmouzo/`): R 4.4.3 + Seurat 5.4.0
+    + Signac 1.14.0 + SeuratDisk 0.0.9019 + utility R packages
+    (tidyverse, matrix, rccp*, hdf5r, optparse) + Bioconductor base.
+    Used by `PREP_R_SEURAT`.
+  - `pals-r-bioc:1.0.0` (`cr.seqera.io/dmouzo/`): R 4.4.3 + minimal
+    Bioconductor base + `BiocManager::install` → cicero + monocle3 +
+    EnsDb.Mmusculus.v79. Used by `PREP_R_CICERO`.
+  - `pals-python-grn:1.0.0` (`ghcr.io/dmouzo/`): re-tag of
+    `kenjikamimoto126/celloracle_ubuntu:0.18.0` (CellOracle + GimmeMotifs
+    + scanpy + anndata). Used by `INFER_GRN`.
+- **Sequera Wave sources** under `containers/`:
+  - `containers/env-r-seurat.yml` — solver spec for the seurat image.
+  - `containers/env-r-bioc.yml` — solver spec for the cicero image.
+  - `containers/Dockerfile.r-seurat` — post-conda RUN that installs
+    BiocManager, SeuratDisk 0.0.9019 (CRAN), and Signac (Bioconductor).
+  - `containers/Dockerfile.r-bioc` — post-conda RUN that installs
+    BiocManager and the Bioconductor-only packages (cicero, monocle3,
+    EnsDb.Mmusculus.v79).
+- **New Nextflow parameters**: `container_r1`, `container_r2`,
+  `container_py` (overridable per run). Legacy `container_r` alias is
+  kept and maps to `container_r1` for back-compat.
 - `data_demo/` ecosystem for reproducible biological test data:
   - `data_demo/raw/` — 10x Genomics raw assets (gitignored, ~6.5 GB).
   - `data_demo/processed/` — Subsampled outputs (gitignored, generated).
@@ -35,29 +58,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `data_demo/README.md` — Biological + technical documentation, references.
 
 ### Changed
+- **Pipeline architecture**: R-side preprocessing is now split into TWO
+  specialized processes (`PREP_R_SEURAT` then `PREP_R_CICERO`) instead of
+  a single monolithic `PREPROCESS_ATAC`. This allows each process to run
+  in its own dedicated image so the conda solver stays tractable.
+  - `bin/GRN_dataProcess.R` → split into `bin/GRN_seurat.R` +
+    `bin/GRN_cicero.R`.
+  - `modules/local/preprocess_atac.nf` → replaced by
+    `modules/local/prep_r_seurat.nf` + `modules/local/prep_r_cicero.nf`.
+  - `workflows/multiome_grn.nf` updated to chain the three processes.
 - **Architecture**: `test_data/` removed. All test-data assets now live in
   `data_demo/`. The default pipeline `--input` points to
   `data_demo/processed/microglia_dam_demo.rds`.
 - **Environment**: `containers/environment.yml` switched
   `bioconductor-ensdb.hsapiens.v86` → `bioconductor-ensdb.mmusculus.v79`
   (Ensembl 79 / GRCm38) to match the 10x Mouse Brain dataset.
-- `bin/GRN_dataProcess.R` already uses `EnsDb.Mmusculus.v79` if the container
-  is built from the updated `environment.yml`.
+- `bin/GRN_cicero.R` now uses `EnsDb.Mmusculus.v79` (the previous
+  hardcoded `EnsDb.Hsapiens.v86` was a bug introduced during the
+  dataset migration and is fixed in this release).
 - `nextflow.config`, `nextflow_schema.json`, `AGENTS.md`, `README.md`,
   `docs/parameters.md`, `docs/usage.md`, `.github/workflows/ci-tests.yml`
-  all updated to point to the new biological default input.
+  all updated to point to the new biological default input and the new
+  three-container architecture.
 
 ### Fixed
-- **Container build (`containers/environment.yml` + `Dockerfile`)**:
-  rewritten from scratch to fix the long-standing resolver failure. Pins
-  now validated against conda-forge/bioconda (June 2026):
-  - `r-base=4.4.3` (r44 build-string; only version that resolves against
-    the modern r-seurat / r-signac stack).
-  - `r-seurat=5.1.0` (Seurat v5 INCLUDES SeuratWrappers; the legacy
-    `r-seuratwrappers` package is abandoned on conda-forge).
-  - `r-signac=1.14.0` + `r-ggnewscale` (required for modern coverage plots).
-  - `r-seuratdisk=0.0.9019` REMOVED from conda deps (broken against r44;
-    depends on `r-spatstat<2.0` which has no r44-compatible build).
+- **Container architecture**: replaced the self-hosted Docker image
+  (`containers/Dockerfile` + `containers/environment.yml` built by
+  `.github/workflows/docker-publish.yml` and pushed to GHCR) with **two
+  pre-built images hosted on Seqera Containers**, one per process:
+  - `cr.seqera.io/dmouzo/pals-r-preprocess:1.0.0` (R 4.4.3 + Seurat
+    5.1.0 + Signac 1.14.0 + SeuratDisk + cicero + monocle3 +
+    EnsDb.Mmusculus.v79 + utility R packages).
+  - `cr.seqera.io/dmouzo/pals-python-grn:1.0.0` (Python 3.11 +
+    celloracle 0.18.0 + scanpy + anndata + gimmemotifs 0.18.3 +
+    goatools + adjustText + scientific stack).
+- **New parameters**: `params.container_r` and `params.container_py`
+  (overridable per run with `--container_r <url> --container_py <url>`).
+  Both default to the Seqera Containers URLs.
+- **Removed legacy GHA workflow**: `.github/workflows/docker-publish.yml`
+  is gone (we no longer build images in CI).
+- **Simplified `.github/workflows/ci-tests.yml`**: the smoke test now
+  pulls the two pre-built Seqera Containers via `docker run` for the
+  R-only data prep / validation steps, and the pipeline run uses them
+  via `-profile docker`. Build times drop from ~30 min to ~3 min on CI.
+- **`gimmemotifs` packaging**: the source distribution on PyPI is broken
+  on Python 3.11+ (depends on `configparser.SafeConfigParser` removed in
+  3.12). We pin `gimmemotifs=0.18.3` from bioconda, where the upstream
+  maintainer publishes pre-built py311 wheels.
     SeuratDisk is now installed from CRAN in the Dockerfile post-conda
     RUN, with the GRN_dataProcess.R fallback to .rds sidecars if it
     cannot be installed.
@@ -81,16 +128,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     subsequent runs (GHCR pull is fast).
 
 ### Removed
-- `containers/test_minimal.yml` (unreferenced residue from earlier
-  iteration; not used by any workflow or script).
-
-### Removed
-- `test_data/` (the synthetic 180-cell mini object) and the scripts that
-  produced/validated it (`bin/build_test_data.R`, `bin/validate_test_data.R`).
-  Their functionality lives on in `data_demo/synthetic/build_synthetic_mini_seurat.R`.
-- `docs/GRN/` directory containing the legacy `GRN.sh`, `GRN_analysis.py`,
-  `GRN_dataProcess.R` and WSL `Zone.Identifier` artifacts.
-- `containers/test_minimal.yml` (see [Unreleased] > Fixed above).
+- `containers/` directory (Dockerfile + environment.yml) and
+  `.github/workflows/docker-publish.yml`. Container images are no longer
+  built in CI; they are pulled from Seqera Containers at runtime.
+- `params.container_tag` (replaced by `params.container_r` and
+  `params.container_py`, both with full image URLs as defaults).
 
 ## [0.1.0] - 2024-06-09
 

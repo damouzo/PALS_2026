@@ -1,0 +1,59 @@
+# ==============================================================================
+# Dockerfile — R-side cicero (PREP_R_CICERO)
+# ==============================================================================
+#
+# This Dockerfile is consumed by Sequera Containers (Wave) to build the
+# `pals-r-bioc:1.0.0` image that runs the PREP_R_CICERO process.
+#
+# Source of truth:  containers/env-r-bioc.yml
+# Image registry:  cr.seqera.io/dmouzo/pals-r-bioc:1.0.0
+# Used by:         modules/local/prep_r_cicero.nf  (params.container_r2)
+#
+# Build context expected by Wave:
+#   containers/
+#     env-r-bioc.yml
+#     Dockerfile.r-bioc         <-- this file
+#
+# Post-conda RUN installs the Bioconductor-only packages that conda cannot
+# resolve: cicero, monocle3, EnsDb.Mmusculus.v79, and BiocManager.
+# ==============================================================================
+
+FROM mambaorg/micromamba:1.5.10-jammy
+
+USER root
+
+# System libraries for HDF5, GitHub installs, and Signac / monocle3 runtime.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        pandoc \
+        libfontconfig1 \
+        libxt-dev \
+        libssl-dev \
+        libcurl4-openssl-dev \
+        libxml2-dev \
+        libzmq3-dev \
+        libhdf5-dev \
+        libgit2-dev \
+        libglpk-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+USER mambauser
+
+# ---- 1. Conda environment from env-r-bioc.yml (minimal bioconda) ----
+COPY --chown=$MAMBA_USER:$MAMBA_USER env-r-bioc.yml /tmp/env-r-bioc.yml
+RUN micromamba install -y -n base -f /tmp/env-r-bioc.yml && \
+    micromamba clean -a -y
+
+# ---- 2. CRAN-only post-conda install (BiocManager) ----
+RUN Rscript -e 'install.packages("BiocManager", repos="https://cloud.r-project.org")'
+
+# ---- 3. Bioconductor-only post-conda install (the heavy lift) ----
+# cicero, monocle3 and EnsDb.Mmusculus.v79 are NOT in bioconda as of June 2026.
+# They are installed by BiocManager against Bioconductor 3.19 (compatible with
+# R 4.4.x). monocle3 can take 15-30 minutes to compile from source; the cache
+# below is essential for incremental rebuilds in Sequera Wave.
+ENV R_LIBS_USER=/opt/conda/lib/R/library
+RUN Rscript -e 'BiocManager::install(c("cicero", "monocle3", "EnsDb.Mmusculus.v79"), update=FALSE, ask=FALSE, version="3.19")'
+
+# ---- 4. Workspace and entrypoint ----
+WORKDIR /workspace
+ENTRYPOINT ["/usr/local/bin/_entrypoint.sh", "Rscript"]

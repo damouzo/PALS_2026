@@ -90,10 +90,25 @@
             "description": "Maximum amount of time that can be requested by any single task.",
             "default": "4.h"
         },
-        "container_tag": {
+        "container_r1": {
             "type": "string",
-            "description": "Docker/Singularity image tag to pull. Defaults to 'latest' for local development.",
-            "default": "latest"
+            "description": "Container image URL for the first R-side process (PREP_R_SEURAT: scRNA + scATAC preprocessing with Seurat + Signac + SeuratDisk). Default points to the Sequera Wave image cr.seqera.io/dmouzo/pals-r-seurat:1.0.0 which ships R 4.4.3 + Seurat 5.4.0 + Signac 1.14.0 + SeuratDisk 0.0.9019 + utility R packages. Override with any container:// or docker:// URL.",
+            "default": "docker://cr.seqera.io/dmouzo/pals-r-seurat:1.0.0"
+        },
+        "container_r2": {
+            "type": "string",
+            "description": "Container image URL for the second R-side process (PREP_R_CICERO: Cicero co-accessibility with cicero + monocle3 + EnsDb.Mmusculus.v79). Default points to the Sequera Wave image cr.seqera.io/dmouzo/pals-r-bioc:1.0.0 which ships R 4.4.3 + Bioconductor 3.19 + cicero + monocle3 + EnsDb.Mmusculus.v79. Override with any container:// or docker:// URL.",
+            "default": "docker://cr.seqera.io/dmouzo/pals-r-bioc:1.0.0"
+        },
+        "container_py": {
+            "type": "string",
+            "description": "Container image URL for the Python-side process (INFER_GRN: CellOracle + GimmeMotifs). Default points to the GHCR image ghcr.io/dmouzo/pals-python-grn:1.0.0 which is a re-tag of kenjikamimoto126/celloracle_ubuntu:0.18.0 (CellOracle 0.18.0 + scanpy + anndata + gimmemotifs + goatools + adjustText). Override with any container:// or docker:// URL.",
+            "default": "docker://ghcr.io/dmouzo/pals-python-grn:1.0.0"
+        },
+        "container_r": {
+            "type": ["string", "null"],
+            "description": "Legacy alias for container_r1. If set, the PREP_R_SEURAT process uses this URL instead of container_r1. Kept for back-compat with older invocations. New pipelines should use --container_r1.",
+            "default": null
         }
     },
     "required": ["input", "outdir"]
