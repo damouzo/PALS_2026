@@ -1,0 +1,88 @@
+# ==============================================================================
+# containers/environment.yml — Conda environment (Python + R utility stack)
+# ==============================================================================
+#
+# This is the CONDA half of the polyglot runtime. The Dockerfile installs the
+# R bioinformatic stack (Seurat / Signac / SeuratDisk / cicero / monocle3 /
+# EnsDb) in a post-conda `RUN` step via BiocManager + CRAN. Splitting the
+# install this way is mandatory because the conda solver cannot resolve the
+# transitive dependency graph of Seurat 5.1.0 + Signac 1.14.0 + monocle3 +
+# EnsDb.Mmusculus.v79 in a single pass — it is one of the densest and most
+# rapidly-evolving dep trees on conda-forge.
+#
+# Channels:
+#   - conda-forge  : Python + scientific stack + R utility packages
+#   - pip          : CellOracle, gimmemotifs, and other PyPI-only packages
+#
+# Regenerate locally with:
+#   mamba env create -f containers/environment.yml
+#   conda activate scMultiome-GRN
+#
+# This file intentionally does NOT include:
+#   - r-seurat, r-signac, r-monocle3, r-cicero, r-seuratdisk,
+#     bioconductor-ensdb.mmusculus.v79
+#   These are installed in the Dockerfile post-conda RUN step with pinned
+#   versions from CRAN / BiocManager, which is the only way to keep the
+#   dep graph stable across rebuilds.
+# ==============================================================================
+
+name: scMultiome-GRN
+channels:
+  - conda-forge
+  - nodefaults
+
+dependencies:
+  # ---------------------------------------------------------------------------
+  # System deps (light; only the ones that conda-solvable packages depend on)
+  # ---------------------------------------------------------------------------
+  - pandoc             # required by Seurat vignettes and CellOracle docs
+  - libstdcxx-ng       # GLIBCXX_3.4.29 required by scanpy/anndata wheels
+
+  # ---------------------------------------------------------------------------
+  # R runtime — pinned to 4.4.3 (r44 build-string). Only the lightweight
+  # utility packages that DO NOT have heavy bioinformatic dependencies go
+  # here. The bioinformatics stack goes through BiocManager/CRAN in the
+  # Dockerfile (see comment block at the top of this file).
+  # ---------------------------------------------------------------------------
+  - r-base=4.4.3
+  - r-optparse
+  - r-dplyr
+  - r-tidyr
+  - r-ggplot2
+  - r-readr
+  - r-rlang
+  - r-pheatmap
+  - r-data.table
+  - r-jsonlite
+  - r-yaml
+  - r-remotes
+  - r-biocmanager
+
+  # ---------------------------------------------------------------------------
+  # Python runtime + scientific stack
+  # ---------------------------------------------------------------------------
+  - python=3.11
+  - pip
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn
+  - matplotlib
+  - seaborn
+  - tqdm
+  - h5py
+  - pyarrow
+  - openpyxl
+  - jupyter
+
+  # ---------------------------------------------------------------------------
+  # Python bioinformatic stack (CellOracle + GimmeMotifs) — PyPI only.
+  # Pins mirror kenjikamimoto126/celloracle_ubuntu:0.18.0 for reproducibility.
+  # ---------------------------------------------------------------------------
+  - pip:
+    - scanpy
+    - anndata
+    - celloracle==0.18.0
+    - gimmemotifs==3.0.0
+    - goatools
+    - adjustText

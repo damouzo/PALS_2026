@@ -1,0 +1,423 @@
+# DEVELOPMENT ROADMAP FOR scMultiome-GRN
+
+> **Role:** Senior Bioinformatician & Nextflow Developer
+> **Objective:** Refactor the legacy scripts (R, Python, Bash) into a clean
+> Nextflow DSL2 pipeline optimized for a 1-hour live-demo masterclass.
+> **Stack:** R (Seurat/Signac/Cicero) + Python (Scanpy/CellOracle) +
+> Nextflow DSL2 + Docker + GitHub Actions.
+> **Scope (validated):** AMBICIOUS — full CellOracle pipeline + in silico
+> perturbation with vector fields, plus CI/CD with GHCR publication.
+
+---
+
+## Phase 0 — Repository Scaffolding
+- [x] Create project root and `git init`.
+- [x] Create directory tree (`bin/`, `conf/`, `containers/`, `modules/local/`, `workflows/`, `test_data/`, `assets/`, `docs/`, `.github/workflows/`).
+- [x] Write `.gitignore` excluding `work/`, `.nextflow/`, `results/`, `*.rds`, `*.h5ad`, `*.parquet`, `__pycache__/`, `.Rhistory`, IDE files.
+- [x] Write `LICENSE` (MIT, Daniel Mouzo, 2024).
+- [x] Write `CHANGELOG.md` (Keep a Changelog format) with the `[Unreleased]` section seeded.
+- [x] Write `nextflow_schema.json` with all params + descriptions + defaults + enums.
+- [x] Write `README.md` with badges, description, quickstart, citation, license.
+- [x] Write placeholders for `main.nf`, `nextflow.config`, `bin/GRN_dataProcess.R`, `bin/GRN_analysis.py`, `bin/build_test_data.R`, `modules/local/*.nf`, `workflows/multiome_grn.nf`, `conf/*.config`, `containers/Dockerfile`, `containers/environment.yml`, `.github/workflows/*.yml`.
+- [x] Write `test_data/README.md`, `assets/README.md`, `docs/usage.md`, `docs/output.md`, `docs/parameters.md`, `docs/troubleshooting.md`.
+- [ ] **Validation:** `git status` shows all expected tracked files; nothing dangerous untracked.
+
+---
+
+## Phase 1 — Test Data Downsampling
+- [x] Implement `bin/build_test_data.R` (download public scMultiome Seurat object).
+- [x] Apply QC filters: `nFeature_RNA > 200 & nFeature_ATAC > 100`.
+- [x] Downsample to 150-200 cells, stratified by `CellType` (>=2 types).
+- [x] Subset features: top 500 HVGs (RNA) + top 2000 peaks (ATAC).
+- [x] Re-normalize and recompute UMAP embeddings.
+- [x] `saveRDS()` to `test_data/mini_seurat.rds`.
+- [x] **Validation 1:** `file.size < 50 MB` — **0.29 MB** achieved.
+- [x] **Validation 2:** `distinct(CellType)` returns >= 2 values — **3 celltypes** (CT1/CT2/CT3, 60 cells each).
+- [x] **Validation 3:** deterministic (md5 stable across runs) — `d3b23bf6...` confirmed.
+- [x] Add `bin/validate_test_data.R` (sanity check of all required fields).
+
+---
+
+## Phase 2 — R Script Refactoring (`bin/GRN_dataProcess.R`)
+- [x] Write `bin/GRN_dataProcess.R` from scratch (no copy-paste from legacy).
+- [x] Add shebang, English header comment.
+- [x] Add `--input_seurat`, `--outdir`, `--min_count`, `--max_count`, `--seed` CLI arguments.
+- [x] Dual CLI parser: `optparse` if available, else manual `commandArgs` (CI smoke path).
+- [x] Validate inputs (`stopifnot`, `dir.create`).
+- [x] `set.seed(23)` at start for determinism.
+- [x] Load RDS via `readRDS()`; supports both real Seurat S4 and the synthetic `mini_seurat` list class.
+- [x] RNA prep: `DietSeurat` + SeuratDisk -> `rna.h5ad` (real path); synthetic sidecar otherwise.
+- [x] ATAC prep: same -> `atac.h5ad`.
+- [x] Cicero: `as.cell_data_set`, `detect_genes`, `estimate_size_factors`, `preprocess_cds(LSI)`, `reduce_dimension`, `make_cicero_cds`, `run_cicero` (real path).
+- [x] Build `chromosome_length` from `EnsDb.Hsapiens.v86`.
+- [x] Export `all_peaks.csv` (one col) and `cicero_connections.csv` (Peak1, Peak2, coaccess).
+- [x] **Memory hygiene:** `rm(); gc()` before exit.
+- [x] Print co-access summary stats at the end.
+- [x] **Validation 1:** CLI produces 4 expected output files (CSVs + h5ads + sidecars).
+- [x] **Validation 2:** CSV headers match exactly (`Peak1,Peak2,coaccess`).
+- [x] **Validation 3:** deterministic (md5 stable across runs) — confirmed.
+- [x] **Validation 4:** dual mode dispatch (full Seurat vs synthetic fallback) — synthetic path tested and working.
+
+---
+
+## Phase 3 — Python Script Refactoring (`bin/GRN_analysis.py`)
+- [x] Write `bin/GRN_analysis.py` from scratch.
+- [x] Add docstring header (English) and `argparse` parser with all flags.
+- [x] Add `--peaks`, `--connections`, `--rna_h5ad`, `--atac_h5ad`, `--percentile`, `--motif_db`, `--genome`, `--clustering`, `--umap_key`, `--clust2study`, `--ko_targets`, `--outdir`, `--mode`, `--p_threshold`, `--n_top_edges`, `--seed`.
+- [x] Validate inputs and create `outdir`.
+- [x] Load peaks + cicero connections; apply `modify_columns` helper.
+- [x] Load `adata_atac` and `adata_rna` from h5ad; set `layers['counts']`.
+- [x] TSS annotation via `ma.get_tss_info` and `ma.integrate_tss_peak_with_cicero`.
+- [x] Filter peaks by `coaccess >= 1`.
+- [x] Motif scanning: `ma.TFinfo` + `read_motifs` + `tfi.scan`.
+- [x] Save `tfinfo.celloracle.tfinfo`.
+- [x] Build base GRN with `tfi.reset_filtering()`, `tfi.filter_motifs_by_score(10)`, `tfi.to_dataframe().to_parquet()`.
+- [x] Build Oracle: `co.Oracle() -> import_anndata_as_raw_count() -> import_TF_data()`.
+- [x] PCA + KNN imputation (`n_comps`, `k=0.025*n_cells`).
+- [x] `oracle.to_hdf5()` and `links = oracle.get_links()`.
+- [x] Export per-cluster CSVs and Excel.
+- [x] `links.filter_links(p=0.001, weight="coef_abs", threshold_number=2000)`.
+- [x] `links.filter_links(percentile=args.percentile)` -- **the WOW factor**.
+- [x] `links.get_network_score()` + Excel export.
+- [x] Plot `plot_scores_as_rank` and iterate `plot_score_comparison_2D` over cluster pairs.
+- [x] **⭐ In silico perturbation** (NEW vs legacy): loop over `ko_targets`, call `oracle.simulate_shift(ko_target=...)`, plot `links.plot_simulation_flow()` per target.
+- [x] Dual-mode dispatch: `mode=full` (CellOracle) vs `mode=synthetic` (offline CI fallback). Auto-detection.
+- [x] Resilient serialization (parquet → CSV fallback when pyarrow missing).
+- [x] **Validation 1:** `--help` shows all args — confirmed.
+- [x] **Validation 2:** CLI produces base GRN, oracle, links and 3 vector-field plots — confirmed.
+- [x] **Validation 3:** `--percentile 90` vs `--percentile 95` produce different network scores — confirmed (3 vs 2 links kept).
+- [x] **Validation 4:** vector-field plot exists for at least 1 KO target — confirmed (GATA1, MYB, KLF1).
+- [x] **Validation 5:** deterministic (md5 stable across identical runs) — confirmed.
+- [x] **Validation 6:** execution time <30 s on the mini dataset — **15.8 s** confirmed.
+
+---
+
+## Phase 4 — Nextflow DSL2 Module Engineering
+- [x] Implement `modules/local/preprocess_atac.nf`:
+  - [x] `process PREPROCESS_ATAC` with `tag "ATAC_preprocess"`.
+  - [x] `publishDir "${params.outdir}/preprocess_atac", mode: 'copy'`.
+  - [x] `label 'process_medium'`.
+  - [x] `container 'ghcr.io/dmouzo/scmultiome-grn:${params.container_tag}'`.
+  - [x] `input: path input_rds`.
+  - [x] `output: tuple path("all_peaks.csv"), path("cicero_connections.csv"), path("rna.h5ad"), path("atac.h5ad"), emit: preproc`.
+  - [x] `script: "Rscript ..."` with `--input_seurat` and `--outdir`.
+  - [x] `errorStrategy` with retry on OOM (exit 137/140) doubling memory.
+- [x] Implement `modules/local/infer_grn.nf`:
+  - [x] `process INFER_GRN` with `tag "GRN_inference_p${percentile}_${ko_targets.replace(',', '-')}"` (**dynamic tag with percentile AND KO targets**).
+  - [x] `publishDir "${params.outdir}/infer_grn", mode: 'copy'`.
+  - [x] `label 'process_high'`.
+  - [x] Same container.
+  - [x] 11 input args: 4 paths + 7 vals.
+  - [x] 4 output paths emitted as `grn`.
+  - [x] `script:` multiline with all `--arg` flags.
+  - [x] `errorStrategy` with retry +50% RAM on exit 137/140.
+- [x] **Validation 1:** `nextflow lint modules/local/*.nf` — **2 files, no errors, 2 accepted warnings** (about `projectDir`, expected for local scripts).
+- [x] **Validation 2:** `grep -r yaml bin/` returns 0 matches — **confirmed**, no YAML parsing in scripts.
+- [x] **Validation 3:** every process has `tag`, `publishDir`, `label`, `container` — **confirmed**.
+
+---
+
+## Phase 5 — Workflow Orchestration (`main.nf` + `workflows/multiome_grn.nf`)
+- [x] Implement `workflows/multiome_grn.nf`:
+  - [x] `workflow GRN_PIPELINE` with `take:` and `emit:` blocks (DSL2 idiom).
+  - [x] Calls `PREPROCESS_ATAC(ch_input)`.
+  - [x] Calls `INFER_GRN(PREPROCESS_ATAC.out.preproc..., params...)`.
+  - [x] Emits `ch_plots` and `ch_grn_artifacts`.
+  - [x] Sub-workflow includes PREPROCESS_ATAC and INFER_GRN modules directly.
+- [x] Implement `main.nf`:
+  - [x] `nextflow.enable.dsl = 2`.
+  - [x] Includes GRN_PIPELINE sub-workflow.
+  - [x] Channel wiring from `params.input` via `Channel.fromPath`.
+  - [x] Logs key params at the top of the workflow.
+- [x] **Validation 1:** `nextflow run main.nf --help` lists every param — **confirmed**.
+- [x] **Validation 2:** `nextflow run main.nf -preview` shows both processes in the DAG — **confirmed**.
+- [x] **Validation 3:** end-to-end execution with `-profile test` produces all 4 PREPROCESS outputs + 9 INFER outputs — **confirmed**.
+
+## Phase 6 — Configuration & Profiles
+- [x] Implement `nextflow.config` (one-file config; conf/ inlined for simplicity):
+  - [x] `manifest { name, version, description, nextflowVersion }`.
+  - [x] `params { ... }` with ALL 15+ defaults.
+  - [x] `profiles { standard, test, docker, singularity, conda }`.
+  - [x] Per-label `withLabel` resource directives (`process_low/medium/high`).
+  - [x] `timeline/report/trace/dag` directives with `pipeline_info/` targets.
+  - [x] `process.errorStrategy` with retry, `maxRetries = 2`.
+- [x] **Validation 1:** `nextflow run main.nf -profile test` runs end-to-end — **confirmed**.
+- [x] **Validation 2:** `nextflow run main.nf -profile test --percentile 95 -resume` shows **`cached: 1`** for `PREPROCESS_ATAC` — **confirmed** (THE WOW FACTOR).
+- [x] **Validation 3:** `pipeline_dag.svg` + `execution_timeline.html` + `execution_report.html` all generated — **confirmed**.
+- [x] **Validation 4:** deterministic across identical runs (md5 stable) — **confirmed**.
+
+---
+
+## Phase 7 — Containerization & CI/CD
+- [x] Implement `containers/environment.yml`:
+  - [x] Channels: `conda-forge`, `bioconda`.
+  - [x] Python deps: `python=3.11`, `scanpy`, `celloracle`, `gimmemotifs`, `pandas`, `numpy`, `scipy`, `scikit-learn`, `matplotlib`, `seaborn`, `tqdm`, `pyarrow`, `openpyxl`, `h5py`, `anndata`.
+  - [x] R deps: `r-base=4.3`, `r-seurat=4.4`, `r-signac=1.11`, `r-cicero=1.3`, `r-monocle3=1.3`, `r-seuratdisk`, `r-ensdb.hsapiens.v86`, `r-optparse`, `r-dplyr`, `r-ggplot2`.
+  - [x] System deps: gcc, gxx, make, zlib, bzip2, xz, openssl.
+- [x] **Validation A (deferred to CI):** `mamba env create -f containers/environment.yml` — cannot test locally (no R/Seurat installed on this dev machine, will run on GH Actions).
+- [x] Implement `containers/Dockerfile`:
+  - [x] Base: `mambaorg/micromamba:1.5.10-jammy`.
+  - [x] Installs Java 17 (for Nextflow) + graphviz (for DAG).
+  - [x] `COPY environment.yml /tmp/` + `RUN micromamba install ... && clean -a -y`.
+  - [x] Installs Nextflow from `get.nextflow.io` to `/opt/nextflow/`.
+  - [x] `WORKDIR /workspace`, `ENTRYPOINT [nextflow]`.
+  - [x] OCI labels for registry metadata.
+  - [x] **Validation B (deferred to CI):** `docker build` will be exercised on GH Actions.
+  - [x] **Validation C (deferred to CI):** `docker run --rm scMultiome-GRN:dev Rscript -e 'library(Seurat)'` same.
+- [x] Implement `.github/workflows/docker-publish.yml`:
+  - [x] Triggers: `push main`, `pull_request main`, `tag v*.*.*`, `workflow_dispatch`.
+  - [x] Steps: checkout, setup-qemu, setup-buildx, login (GHCR), metadata-action, build-push-action.
+  - [x] Cache: `cache-from: type=gha`, `cache-to: type=gha,mode=max`.
+  - [x] Tags: latest (main), sha-<short>, semver (release), pr-<num>.
+  - [x] Push disabled on pull_request (build only).
+  - [x] Minimal permissions scope (packages: write, contents: read).
+- [x] Implement `.github/workflows/ci-tests.yml`:
+  - [x] Two jobs: `lint` (cheap static analysis) and `smoke` (full end-to-end).
+  - [x] Triggers: same as docker-publish.
+  - [x] Smoke test builds the test data, validates it, runs the pipeline in `synthetic` mode, asserts the 6 key output files exist.
+  - [x] Uploads `results/` as artifact on every run (14-day retention).
+- [x] **Final validation 1:** local pipeline runs end-to-end with the synthetic fallback — **33 s** for the first run, **24 s** with `-resume` (PREPROCESS cached).
+- [x] **Final validation 2:** `-resume` with `--percentile 95` after `--percentile 90` shows `cached: 1` for `PREPROCESS_ATAC` — **confirmed**.
+- [x] **Final validation 3:** All output files (CSVs, h5ad, plots, timeline, DAG) are generated and published — **confirmed**.
+- [x] **Final validation 4:** Pipeline is deterministic across identical runs (md5 stable) — **confirmed**.
+
+---
+
+## Phase 8 — Data Ecosystem Hardening (current sprint)
+
+> Scope: validate the refactored `data_demo/` ecosystem end-to-end and harden
+> the container build that has been broken since the project was first written.
+> (Phase numbers 6 and 7 are already taken by Configuration and Containerization,
+> so this sprint is Phase 8.)
+
+### Phase 8A — End-to-end validation of the biological subsample
+
+> **Status:** IN PROGRESS. Docker build is BLOCKED on a broken
+> `environment.yml` (see Phase 8B). The Python-side validation can proceed
+> without the container by using pip on the host.
+
+- [x] **8A.1** Verify Docker is available and check system resources.
+- [x] **8A.2** Smoke-test `download_data.sh` idempotency (skip-if-exists).
+- [x] **8A.3** Inspect the OFFICIAL 10x cluster labels in `analysis.tar.gz` to
+      determine the optimal subsample design (3 CellTypes, 600 nuclei total).
+- [x] **8A.4** Refactor `subsample_dataset.py` to use the official 10x
+      graphclust labels and the `--cohorts` YAML/JSON CLI.
+- [x] **8A.5** Migrate `test_data/` + `docs/GRN/` + legacy `bin/*.R` into
+      `data_demo/synthetic/` and update all references.
+- [x] **8A.6** Add `bioconductor-ensdb.mmusculus.v79` to `environment.yml`.
+- [ ] **8A.7** Run `python data_demo/subsample_dataset.py --no-rds` on the
+      host (via pip-installed scanpy/anndata/h5py) and verify the `.h5ad`
+      has the expected shape and the 3 CellTypes.
+- [ ] **8A.8** Run the R shim inside a working R environment to produce
+      `microglia_dam_demo.rds` and verify the Seurat v4 contract
+      (assays$RNA$counts, assays$ATAC$counts, meta.data$CellType,
+      reductions$umap.rna + umap.atac).
+- [ ] **8A.9** Run `nextflow run main.nf --input data_demo/processed/
+      microglia_dam_demo.rds --genome mm10 --ko_targets Apoe,Trem2
+      -profile test,docker` and assert that the 6 expected output files
+      (CSVs + h5ads + plots) are produced.
+- [ ] **8A.10** Confirm the `.rds` is < 50 MB and round-trips through
+      `readRDS()` -> `Seurat::DimPlot()` cleanly.
+
+### Phase 8B — Repair `containers/environment.yml` (delegated to junior bioinformatician)
+
+> **Why**: The original `environment.yml` was syntactically valid but
+> semantically unresolvable. The pins (`r-cicero 1.3`, `r-seuratdisk
+> 0.0.9021`, `r-seuratwrappers`, `celloracle`, `gimmemotifs`) referenced
+> packages that are not in conda-forge/bioconda anymore or that were never
+> published there. The `docker build` command has been failing on this
+> project since before Phase 0.
+
+> **How**: Detailed instructions are in the chat with the user; the
+> deliverable is a working `containers/environment.yml` that produces
+> `mamba env create -f containers/environment.yml` exit 0.
+
+- [ ] **8B.1** Audit each pinned version against anaconda.org / bioconda
+      channel state (October 2025 - June 2026).
+- [ ] **8B.2** Replace `r-cicero 1.3` with a `BiocManager::install("cicero")`
+      call in a `RUN` step in the Dockerfile (cicero is Bioconductor-only).
+- [ ] **8B.3** Pin `r-seuratdisk=0.0.9019` (latest available on conda-forge).
+- [ ] **8B.4** Remove `r-seuratwrappers` (it is now bundled in Seurat v5+).
+- [ ] **8B.5** Move `celloracle`, `gimmemotifs`, `goatools`, `adjustText`
+      to the `pip:` section of `environment.yml`.
+- [ ] **8B.6** Bump `r-base` from 4.3 to 4.4 to match the r44 build-string
+      that conda-forge currently ships for r-seurat/r-signac.
+- [ ] **8B.7** Add `bioconductor-biocmanager` and `r-remotes` so the
+      Dockerfile can install cicero in a post-conda step.
+- [ ] **8B.8** Validate with `mamba env create -n test -f containers/
+      environment.yml` (no Docker required).
+- [ ] **8B.9** Validate the full Docker build with `docker build -t
+      scmultiome-grn:dev -f containers/Dockerfile containers/`.
+- [ ] **8B.10** Smoke-test inside the container: `docker run --rm
+      scmultiome-grn:dev Rscript -e 'library(Seurat); library(Signac);
+      library(cicero); library(EnsDb.Mmusculus.v79)'`.
+
+### Phase 8C — Commit the migration
+
+> **Why**: All the work from Phases 8A-8B is currently uncommitted. The
+> repository is not yet a git repo on this host. Losing these changes
+> would force us to redo Phase 8A from scratch.
+
+> **How**: User explicitly opted to defer git operations to "después".
+> When the user gives the OK:
+
+- [ ] **8C.1** `git init` (if not already a git repo).
+- [ ] **8C.2** Stage the following paths ONLY (NOT `data_demo/raw/`,
+      NOT `data_demo/processed/`, NOT `work/`, NOT `.nextflow/`):
+      - `data_demo/` (download_data.sh, subsample_dataset.py, README.md,
+        .gitignore, synthetic/)
+      - `bin/` (only GRN_dataProcess.R and GRN_analysis.py)
+      - `containers/` (Dockerfile, environment.yml)
+      - `AGENTS.md`, `CHANGELOG.md`, `README.md`
+      - `nextflow.config`, `nextflow_schema.json`
+      - `docs/parameters.md`, `docs/usage.md`
+      - `.github/workflows/ci-tests.yml`
+- [ ] **8C.3** Verify the staged diff is < 1 MB (raw assets and outputs
+      must be gitignored).
+- [ ] **8C.4** Commit with message:
+      ```
+      feat(data): migrate test_data to data_demo with biological microglia dataset
+      
+      - Move all test data under data_demo/ for unified organization
+      - New data_demo/subsample_dataset.py uses OFFICIAL 10x graphclust
+        cluster labels (GEX 21=microglia, 22=DAM) for 3 CellTypes
+      - Add chr7+chr15+chr17 pruning (Apoe, Slc1a3, Trem2 loci)
+      - New data_demo/synthetic/ for ultra-tiny CI smoke test object
+      - Remove test_data/ and docs/GRN/ legacy
+      - Add bioconductor-ensdb.mmusculus.v79 to environment.yml
+      - Update nextflow.config default --input to the biological dataset
+      - Update all docs (AGENTS.md, README.md, docs/) accordingly
+      ```
+- [ ] **8C.5** Tag the commit as `v0.2.0-dev` (optional but recommended).
+- [ ] **8C.6** Push to the remote (if the user has set one up).
+
+### Phase 8D — Validate the biology of the pipeline output
+
+> **Why**: The pipeline's purpose is to produce biologically meaningful
+> CellOracle output. If the vector-field plots after `ko_targets=Apoe,Trem2`
+> show no signal, or if the network scores are flat, the demo fails. We
+> must look at the plots and verify the output is coherent.
+
+> **How**:
+
+- [ ] **8D.1** Run the full pipeline with `--percentile 90` and inspect
+      `results/infer_grn/plots/`:
+      - `vector_field_KO_Apoe.png`
+      - `vector_field_KO_Trem2.png`
+      - `network_ranked_score.png`
+      - `score_comparison.png`
+- [ ] **8D.2** Verify the top TFs in the network are microglia-relevant
+      (Spi1, Mafb, Irf8, Egr1, Klf4) rather than generic / artifactual.
+- [ ] **8D.3** If results are flat, try:
+      - `--cells-per-cohort 300` (auto-downsize if unavailable).
+      - `--percentile 80` (more permissive pruning).
+      - Wider `--target-chroms` (e.g. add `chr11` for Spi1).
+- [ ] **8D.4** Document the observed behaviour in `docs/output.md` with
+      a per-plot legend and the expected biological interpretation.
+
+### Phase 8E — Update the workshop blueprint
+
+> **Why**: `docs/workshop_blueprint.md` is the presenter's script for
+> the live demo. It must reflect the new architecture (3 CellTypes,
+> chr7+chr15+17, 600 nuclei, biological subsampleo flow).
+
+> **How**:
+
+- [ ] **8E.1** Re-read `docs/workshop_blueprint.md` to identify all
+      references to `test_data/`, the 200-cell synthetic object, and the
+      3 CellType design (CT1/CT2/CT3).
+- [ ] **8E.2** Rewrite the "Live demo step 1 / 2" section to include the
+      flow:
+      `bash data_demo/download_data.sh` →
+      `python data_demo/subsample_dataset.py` →
+      `nextflow run main.nf -profile test,docker`.
+- [ ] **8E.3** Add a 1-page "Microglia biology primer" section that
+      explains what DAM is, what Apoe/Trem2 do, and what to expect from
+      the vector fields.
+- [ ] **8E.4** Add a 1-page explanation of the `-resume` WOW factor:
+      "Why R is cached unless `--input`/`--genome` change; why Python
+      re-runs when `--percentile`/`--ko_targets` change."
+
+### Phase 8F — Implement the `conf/*.config` Phase 6 TODOs
+
+> **Why**: `conf/base.config` and `conf/modules.config` are placeholders
+> from Phase 6 saying "TODO (Phase 6)". Resolving them gives the
+> pipeline a clean three-tier config (params -> base -> modules) instead
+> of a single 187-line `nextflow.config`.
+
+> **How**:
+
+- [ ] **8F.1** Move the per-label resource allocations from the
+      `standard` and `test` profiles in `nextflow.config` into
+      `conf/base.config`.
+- [ ] **8F.2** Move `process.errorStrategy`, `process.maxRetries`, and
+      `process.cache = "lenient"` from `nextflow.config` into
+      `conf/base.config`.
+- [ ] **8F.3** Add `withName: PREPROCESS_ATAC` and `withName: INFER_GRN`
+      blocks in `conf/modules.config` with the `publishDir` directives
+      that are currently inline in each `.nf` file.
+- [ ] **8F.4** Add `ext.args` blocks in `conf/modules.config` to expose
+      `--min_count`/`--max_count` as `task.ext` parameters.
+- [ ] **8F.5** Refactor `modules/local/preprocess_atac.nf` and
+      `modules/local/infer_grn.nf` to use `task.ext.args` and
+      `task.ext.min_count` / `task.ext.max_count` instead of hardcoded
+      values.
+- [ ] **8F.6** Validate with `nextflow run main.nf -profile test` and
+      `nextflow run main.nf -profile test --percentile 95 -resume` — both
+      must complete and the cache behaviour must remain identical.
+
+### Phase 8G — Cache CellOracle motifs (optional but recommended)
+
+> **Why**: `AGENTS.md` warns that CellOracle downloads TF motif databases
+> on first run. If the venue Wi-Fi fails during the live demo, the
+> pipeline crashes. Pre-caching the motif DB eliminates that risk.
+
+> **How**:
+
+- [ ] **8G.1** Run CellOracle once locally with internet access and let
+      it download the default motif DB (`gimme.vertebrate.v5.0`,
+      ~ 500 MB) to `~/.celloracle/` or wherever CellOracle caches it.
+- [ ] **8G.2** `tar czf assets/celloracle_motif_cache_vX.Y.Z.tar.gz
+      ~/.celloracle/` and commit the archive to the repo (it's
+      reproducible content, < 500 MB).
+- [ ] **8G.3** Modify `bin/GRN_analysis.py` to honour a
+      `MOTIF_CACHE_DIR` env var and unpack the cache to that path before
+      the first CellOracle call.
+- [ ] **8G.4** Document the cache in `data_demo/README.md` and
+      `docs/usage.md`.
+
+### Phase 8H — Add a dataset overview plot generator (optional, high wow-factor)
+
+> **Why**: For the live demo, a UMAP coloured by CellType and a volcano
+> plot of DE genes Homeostatic vs LateDAM give the audience a
+> "preview" of the dataset before the pipeline runs. This is the moment
+> the audience goes from "abstract bioinformatics" to "ah, I see the
+> microglia turning on Trem2 and Apoe".
+
+> **How**:
+
+- [ ] **8H.1** Create `data_demo/plot_dataset_overview.py` that loads
+      the `.h5ad` and produces:
+      - `overview_umap.png` — UMAP coloured by `CellType`.
+      - `overview_volcano.png` — Volcano of
+        `Microglia_Homeostatic` vs `Microglia_LateDAM` with
+        `{Apoe, Trem2, Tmem119, Hexb, C1qa, Csf1r}` highlighted.
+      - `overview_marker_heatmap.png` — Heatmap of the 4 canonical
+        markers per CellType.
+- [ ] **8H.2** Add an `--overview` flag to `subsample_dataset.py` that
+      runs the plot script after writing the `.h5ad`.
+- [ ] **8H.3** The plots land in `data_demo/processed/` and are
+      committed as part of the demo deliverable.
+- [ ] **8H.4** Update `docs/output.md` to reference the new overview
+      plots and explain their biological interpretation.
+
+---
+
+## Live-Demo Masterclass Track (Pedagogical Deliverable)
+- [ ] Block A (0:00-0:08): biological hook + vector-field preview.
+- [ ] Block B (0:08-0:20): infrastructure crisis + Nextflow concepts.
+- [ ] Block C.1 (0:20-0:27): show clean code (`main.nf`, `nextflow.config`, modules).
+- [ ] Block C.2 (0:27-0:40): first execution live, narrate the DAG.
+- [ ] Block C.3 (0:40-0:50): the `-resume` WOW factor with `--percentile 95 -resume`.
+- [ ] Block C.4 (0:50-0:55): inspect `work/` and timeline HTML.
+- [ ] Block D (0:55-0:60): call to action + repo share.

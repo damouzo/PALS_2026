@@ -1,0 +1,100 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://github.com/dmouzo/scMultiome-GRN/nextflow_schema.json",
+    "title": "scMultiome-GRN pipeline parameters",
+    "description": "Schema for command-line parameters of the scMultiome-GRN Nextflow pipeline.",
+    "type": "object",
+    "definitions": {
+        "input_path": {
+            "type": "string",
+            "pattern": "^\\S+$",
+            "description": "Absolute or relative path to an input file or directory."
+        },
+        "output_path": {
+            "type": "string",
+            "pattern": "^\\S+$",
+            "description": "Output directory path."
+        }
+    },
+    "properties": {
+        "input": {
+            "type": "string",
+            "description": "Path to the input Seurat RDS object containing the scMultiome data. The default points to the biological microglia dataset produced by data_demo/subsample_dataset.py.",
+            "default": "${projectDir}/data_demo/processed/microglia_dam_demo.rds"
+        },
+        "outdir": {
+            "type": "string",
+            "description": "Output directory for all pipeline results.",
+            "default": "results"
+        },
+        "genome": {
+            "type": "string",
+            "description": "Reference genome assembly for TSS annotation.",
+            "default": "hg38",
+            "enum": ["hg38", "hg19", "mm10", "mm39"]
+        },
+        "motif_db": {
+            "type": "string",
+            "description": "Motif database identifier used by GimmeMotifs / CellOracle.",
+            "default": "gimme.vertebrate.v5.0"
+        },
+        "clustering": {
+            "type": "string",
+            "description": "Column name in the Seurat object meta.data containing the cell-type clustering to use for GRN inference.",
+            "default": "CellType"
+        },
+        "umap_key": {
+            "type": "string",
+            "description": "Key in the Seurat object reductions slot containing the UMAP embedding to use.",
+            "default": "umap_rna"
+        },
+        "clust2study": {
+            "type": "string",
+            "description": "Specific cell-type cluster to study in the in silico perturbation module.",
+            "default": "HSC_1"
+        },
+        "percentile": {
+            "type": "integer",
+            "description": "Percentile threshold used to prune weak network links. Isolated as a top-level parameter to showcase the -resume caching strategy.",
+            "default": 90,
+            "minimum": 0,
+            "maximum": 100
+        },
+        "p_threshold": {
+            "type": "number",
+            "description": "P-value threshold for link filtering.",
+            "default": 0.001
+        },
+        "n_top_edges": {
+            "type": "integer",
+            "description": "Maximum number of edges to keep after filtering.",
+            "default": 2000
+        },
+        "ko_targets": {
+            "type": "string",
+            "description": "Comma-separated list of transcription factor symbols to simulate as knockouts in the in silico perturbation module.",
+            "default": "GATA1,MYB,KLF1"
+        },
+        "max_cpus": {
+            "type": "integer",
+            "description": "Maximum number of CPUs that can be requested by any single task.",
+            "default": 8
+        },
+        "max_memory": {
+            "type": "string",
+            "description": "Maximum amount of memory that can be requested by any single task.",
+            "default": "32.GB"
+        },
+        "max_time": {
+            "type": "string",
+            "description": "Maximum amount of time that can be requested by any single task.",
+            "default": "4.h"
+        },
+        "container_tag": {
+            "type": "string",
+            "description": "Docker/Singularity image tag to pull. Defaults to 'latest' for local development.",
+            "default": "latest"
+        }
+    },
+    "required": ["input", "outdir"]
+}

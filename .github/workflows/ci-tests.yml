@@ -1,0 +1,148 @@
+# ==============================================================================
+# .github/workflows/ci-tests.yml
+# ==============================================================================
+#
+# Pipeline smoke tests on CI. Runs on every push to main and every PR.
+#
+# Steps:
+#   1. Lint every Nextflow script (cheap, no execution).
+#   2. Build the test dataset (synthetic mini Seurat object).
+#   3. Smoke-run the pipeline end-to-end in synthetic mode.
+#   4. Assert the key output files exist.
+#
+# Note on docker-publish dependency: this workflow does NOT depend on
+# docker-publish. GitHub Actions does not allow cross-workflow `needs:`
+# (each workflow's `jobs` namespace is private), and depending on the
+# docker-publish job from this workflow would also force the smoke test
+# to wait ~20 min for the image build on every commit, which is too slow
+# for the inner dev loop.
+#
+# Strategy: the smoke test installs micromamba on the runner and creates
+# the test env from containers/environment.yml + a separate R install
+# step for Seurat / Signac / cicero / monocle3. This is slower than
+# running inside the published image (~6 min) but does not require
+# waiting for docker-publish to finish.
+#
+# If anything fails, the PR cannot be merged.
+# ==============================================================================
+
+name: ci-tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Lint Nextflow
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nextflow
+        run: |
+          curl -s https://get.nextflow.io | bash
+          sudo mv nextflow /usr/local/bin/
+          sudo chmod +x /usr/local/bin/nextflow
+      - name: Lint
+        run: |
+          nextflow lint . 2>&1 | tee lint.log
+          if grep -qE "^Error" lint.log; then
+            echo "Lint errors found. See lint.log."
+            exit 1
+          fi
+
+  smoke:
+    name: Pipeline smoke test (synthetic mode, conda env on runner)
+    runs-on: ubuntu-latest
+    needs: [lint]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+              openjdk-17-jre-headless \
+              graphviz \
+              pandoc
+
+      - name: Install micromamba
+        run: |
+          curl -L https://micro.mamba.pm/api/micromamba/linux-64/latest | \
+              sudo tar -xvj -C /usr/local bin/micromamba
+          sudo ln -sf /usr/local/bin/micromamba /usr/local/bin/mamba
+
+      - name: Create the conda env from environment.yml
+        env:
+          MAMBA_NO_LOCKFILE_INSTALL: "1"
+        run: |
+          micromamba create -y -n pals -f containers/environment.yml
+          echo "PALS_ENV_PATH=$(micromamba run -n pals which python | xargs dirname | xargs dirname)" \
+              >> $GITHUB_ENV
+
+      - name: Install R bioinformatic stack (Seurat / Signac / cicero / monocle3 / EnsDb)
+        env:
+          PATH: /usr/local/bin:/usr/bin:/bin:/opt/conda/envs/pals/bin
+        run: |
+          # CRAN: Seurat + Signac
+          micromamba run -n pals Rscript -e 'options(repos = c(CRAN = "https://cloud.r-project.org"), Ncpus = 4); \
+              install.packages(c("Seurat", "Signac"), dependencies = TRUE)'
+          # CRAN: SeuratDisk (non-fatal; pipeline has a .rds sidecar fallback)
+          micromamba run -n pals Rscript -e 'options(repos = c(CRAN = "https://cloud.r-project.org"), Ncpus = 4); \
+              tryCatch(install.packages("SeuratDisk", dependencies = TRUE), \
+                  error = function(e) message("SeuratDisk install failed (non-fatal): ", e$message))'
+          # Bioc 3.19 (aligned with R 4.4.x): monocle3, cicero, EnsDb.Mmusculus.v79
+          micromamba run -n pals Rscript -e 'options(repos = c(CRAN = "https://cloud.r-project.org"), Ncpus = 4); \
+              BiocManager::install(c("monocle3", "cicero", "EnsDb.Mmusculus.v79"), \
+                  version = "3.19", update = FALSE, ask = FALSE, dependencies = TRUE)'
+
+      - name: Install Nextflow
+        run: |
+          curl -s https://get.nextflow.io | bash
+          sudo mv nextflow /usr/local/bin/
+          sudo chmod +x /usr/local/bin/nextflow
+
+      - name: Build test data
+        run: |
+          micromamba run -n pals Rscript data_demo/synthetic/build_synthetic_mini_seurat.R
+
+      - name: Validate test data
+        run: |
+          micromamba run -n pals Rscript data_demo/synthetic/validate_synthetic_mini_seurat.R
+
+      - name: Smoke run (synthetic mode)
+        env:
+          PATH: /usr/local/bin:/usr/bin:/bin:/opt/conda/envs/pals/bin
+          NXF_OFFLINE: "true"
+          NXF_ANSI_LOG: "false"
+        run: |
+          # Use the Python inside the conda env explicitly
+          PY_BIN=$(micromamba run -n pals which python)
+          nextflow run main.nf \
+              -profile test \
+              --input data_demo/synthetic/mini_seurat.rds \
+              --percentile 90 \
+              --execution_mode synthetic \
+              --python "${PY_BIN}" 2>&1 | tee run.log
+
+      - name: Assert outputs
+        run: |
+          test -s results/preprocess_atac/all_peaks.csv
+          test -s results/preprocess_atac/cicero_connections.csv
+          test -s results/infer_grn/base_GRN.csv
+          test -s results/infer_grn/network_scores.csv
+          test -s results/infer_grn/plots/vector_field_KO_GATA1.png
+          test -s results/pipeline_info/execution_timeline.html
+          test -s results/pipeline_info/pipeline_dag.svg
+          echo "All expected output files present."
+
+      - name: Upload pipeline outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-outputs
+          path: results/
+          retention-days: 14

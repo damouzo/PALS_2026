@@ -1,0 +1,73 @@
+# Nextflow
+work/
+.nextflow/
+.nextflow.log*
+.nextflow.cac*
+*.html
+!docs/**/*.html
+!assets/**/*.html
+
+# Results (regenerated on each run)
+results/
+pipeline_info/
+
+# Data artifacts (regenerable from test_data/)
+*.rds
+*.rda
+*.h5ad
+*.h5Seurat
+*.parquet
+*.hdf5
+*.h5
+*.loom
+
+# Test outputs
+test_output/
+/tmp/
+*.tmp
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.eggs/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# R
+.Rhistory
+.RData
+.Rapp.history
+.Ruserdata
+.Rproj.user/
+*.Rproj
+
+# Reticulate / CellOracle cache
+.reticulate/
+celloracle_data/
+*.celloracle.oracle
+*.celloracle.links
+*.celloracle.tfinfo
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Editors
+.idea/
+.vscode/
+*.iml
+
+# Secrets
+.env
+*.pem
+*.key
