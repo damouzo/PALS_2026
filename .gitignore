@@ -7,11 +7,11 @@ work/
 !docs/**/*.html
 !assets/**/*.html
 
-# Results (regenerated on each run)
+# Results 
 results/
 pipeline_info/
 
-# Data artifacts (regenerable from test_data/)
+# Data artifacts 
 *.rds
 *.rda
 *.h5ad
@@ -63,7 +63,7 @@ Thumbs.db
 *~
 
 # Editors
-.idea/
+AGENTS.md
 .vscode/
 *.iml
 
