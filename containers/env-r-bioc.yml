@@ -1,5 +1,16 @@
 # ==============================================================================
-# env-r-bioc.yml — Sequera Containers (Wave) for PREP_R_CICERO
+# env-r-bioc.yml — [LEGACY] historical conda spec for PREP_R_CICERO
+# ==============================================================================
+#
+# *** LEGACY / NOT IN USE ***
+# The pipeline no longer builds an image from this conda spec. The R-side image
+# for PREP_R_CICERO is materialised on the fly by Sequera Wave from the ORAS
+# link declared in nextflow.config (params.container_r2):
+#
+#   oras://community.wave.seqera.io/library/python_r-base_r-essentials_r-remotes_pruned:ffe857cbb37c1f02
+#
+# This file is kept for historical reference and traceability. See
+# AGENTS.md -> "Container & CI/CD" for the current container architecture.
 # ==============================================================================
 #
 # Image: cr.seqera.io/library/python_r-base_r-essentials_r-remotes_pruned

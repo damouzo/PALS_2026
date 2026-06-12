@@ -1,5 +1,16 @@
 # ==============================================================================
-# env-r-seurat.yml — Sequera Containers (Wave) for PREP_R_SEURAT
+# env-r-seurat.yml — [LEGACY] historical conda spec for PREP_R_SEURAT
+# ==============================================================================
+#
+# *** LEGACY / NOT IN USE ***
+# The pipeline no longer builds an image from this conda spec. The R-side image
+# for PREP_R_SEURAT is materialised on the fly by Sequera Wave from the ORAS
+# link declared in nextflow.config (params.container_r1):
+#
+#   oras://community.wave.seqera.io/library/python_r-base_r-essentials_r-devtools_pruned:79376aa02ef4e2df
+#
+# This file is kept for historical reference and traceability. See
+# AGENTS.md -> "Container & CI/CD" for the current container architecture.
 # ==============================================================================
 #
 # Image: cr.seqera.io/library/python_r-base_r-essentials_r-devtools_pruned

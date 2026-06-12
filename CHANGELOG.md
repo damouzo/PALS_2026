@@ -15,26 +15,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Multi-image container architecture** replacing the single
-  `pals-r-preprocess` image:
-  - `pals-r-seurat:1.0.0` (`cr.seqera.io/dmouzo/`): R 4.4.3 + Seurat 5.4.0
-    + Signac 1.14.0 + SeuratDisk 0.0.9019 + utility R packages
-    (tidyverse, matrix, rccp*, hdf5r, optparse) + Bioconductor base.
-    Used by `PREP_R_SEURAT`.
-  - `pals-r-bioc:1.0.0` (`cr.seqera.io/dmouzo/`): R 4.4.3 + minimal
-    Bioconductor base + `BiocManager::install` → cicero + monocle3 +
-    EnsDb.Mmusculus.v79. Used by `PREP_R_CICERO`.
-  - `pals-python-grn:1.0.0` (`ghcr.io/dmouzo/`): re-tag of
-    `kenjikamimoto126/celloracle_ubuntu:0.18.0` (CellOracle + GimmeMotifs
-    + scanpy + anndata). Used by `INFER_GRN`.
+- **Multi-source container architecture** replacing the previous
+  GHCR + Wave mix:
+  - `pals-r-seurat` (Wave ORAS link
+    `oras://community.wave.seqera.io/library/python_r-base_r-essentials_r-devtools_pruned:79376aa02ef4e2df`):
+    R 4.4.3 + R-essentials + R-devtools + tidyverse + r-seurat 5.4.0 +
+    hdf5r + optparse + the Bioconductor base classes. Signac and
+    SeuratDisk are installed at runtime by `bin/GRN_seurat.R`. Used by
+    `PREP_R_SEURAT`.
+  - `pals-r-bioc` (Wave ORAS link
+    `oras://community.wave.seqera.io/library/python_r-base_r-essentials_r-remotes_pruned:ffe857cbb37c1f02`):
+    R 4.4.3 + R-essentials + R-remotes + the Bioconductor base classes.
+    cicero + monocle3 + EnsDb.Mmusculus.v79 are installed at runtime by
+    `bin/GRN_cicero.R`. Used by `PREP_R_CICERO`.
+  - `pals-python-grn:1.0.0` (`cr.seqera.io/dmouzo/`): re-tag of
+    `kenjikamimoto126/celloracle_ubuntu:0.18.0` (CellOracle 0.18.0 +
+    GimmeMotifs 0.18.3 + scanpy + anndata + goatools + adjustText +
+    scientific stack). Used by `INFER_GRN`.
 - **Sequera Wave sources** under `containers/`:
-  - `containers/env-r-seurat.yml` — solver spec for the seurat image.
-  - `containers/env-r-bioc.yml` — solver spec for the cicero image.
-  - `containers/Dockerfile.r-seurat` — post-conda RUN that installs
-    BiocManager, SeuratDisk 0.0.9019 (CRAN), and Signac (Bioconductor).
-  - `containers/Dockerfile.r-bioc` — post-conda RUN that installs
-    BiocManager and the Bioconductor-only packages (cicero, monocle3,
-    EnsDb.Mmusculus.v79).
+  - `containers/env-r-seurat.yml` — historical conda spec for the seurat
+    image (marked LEGACY; the Wave ORAS link is the live source).
+  - `containers/env-r-bioc.yml` — historical conda spec for the cicero
+    image (marked LEGACY).
+  - `containers/Dockerfile.r-seurat` — historical post-conda Dockerfile
+    (marked LEGACY).
+  - `containers/Dockerfile.r-bioc` — historical post-conda Dockerfile
+    (marked LEGACY).
 - **New Nextflow parameters**: `container_r1`, `container_r2`,
   `container_py` (overridable per run). Legacy `container_r` alias is
   kept and maps to `container_r1` for back-compat.
@@ -58,6 +64,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `data_demo/README.md` — Biological + technical documentation, references.
 
 ### Changed
+- **Container source of truth is now a Wave + GHCR mix**: the two R-side
+  images are Sequera Wave **ORAS links** (the community cache resolves
+  them on the executor) and the Python-side image is re-tagged to
+  **GHCR** under `ghcr.io/damouzo/pals-python-grn:1.0.0` (note the
+  GitHub handle is `damouzo`, not `dmouzo`). The earlier
+  `ghcr.io/dmouzo/...` and `cr.seqera.io/dmouzo/pals-r-*` references
+  have been removed from `nextflow.config`,
+  `nextflow_schema.json`, `AGENTS.md`, `README.md` and
+  `data_demo/subsample_dataset.py`. Signac, SeuratDisk, cicero,
+  monocle3 and EnsDb.Mmusculus.v79 are no longer baked into the
+  R-side images; they are installed at runtime by `bin/GRN_seurat.R`
+  and `bin/GRN_cicero.R` via idempotent helpers.
+- **CI removed**: `.github/workflows/ci-tests.yml` deleted. Validation
+  is now manual via `nextflow lint .` plus a local
+  `nextflow run main.nf -profile test,docker` smoke test.
 - **Pipeline architecture**: R-side preprocessing is now split into TWO
   specialized processes (`PREP_R_SEURAT` then `PREP_R_CICERO`) instead of
   a single monolithic `PREPROCESS_ATAC`. This allows each process to run

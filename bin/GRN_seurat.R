@@ -111,6 +111,39 @@ cat(sprintf("  seed         : %d\n", opt$seed))
 cat(sprintf("  mode         : %s\n", opt$mode))
 cat("\n")
 
+# ---- Idempotent post-install of Signac + SeuratDisk -------------------------
+# The Wave image for PREP_R_SEURAT ships R 4.4.3 + r-seurat 5.4.0 + the
+# Bioconductor base classes, but Signac and SeuratDisk are NOT pre-installed
+# (they are pulled in here on first use, then cached on the image filesystem
+# for subsequent runs of the same task hash). SeuratDisk comes from CRAN with a
+# pinned version; Signac comes from Bioconductor 3.19 (R 4.4.x compatible).
+ensure_postinstall_deps <- function() {
+  # 1. CRAN: SeuratDisk (pinned, BiocManager not needed)
+  if (!requireNamespace("SeuratDisk", quietly = TRUE)) {
+    cat("[post-install] SeuratDisk not found, installing pinned 0.0.9019 from CRAN...\n")
+    if (!requireNamespace("remotes", quietly = TRUE)) {
+      install.packages("remotes", repos = "https://cloud.r-project.org")
+    }
+    remotes::install_version("SeuratDisk", version = "0.0.9019",
+                             repos = "https://cloud.r-project.org",
+                             upgrade = "never")
+  } else {
+    cat("[post-install] SeuratDisk present\n")
+  }
+  # 2. Bioconductor: Signac
+  if (!requireNamespace("Signac", quietly = TRUE)) {
+    cat("[post-install] Signac not found, installing from Bioconductor 3.19...\n")
+    if (!requireNamespace("BiocManager", quietly = TRUE)) {
+      install.packages("BiocManager", repos = "https://cloud.r-project.org")
+    }
+    BiocManager::install("Signac", update = FALSE, ask = FALSE, version = "3.19")
+  } else {
+    cat("[post-install] Signac present\n")
+  }
+}
+
+ensure_postinstall_deps()
+
 # ---- Helpers ----------------------------------------------------------------
 unfactorize <- function(df) {
   i <- vapply(df, is.factor, logical(1))

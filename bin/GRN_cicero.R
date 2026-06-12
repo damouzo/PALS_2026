@@ -113,6 +113,35 @@ cat(sprintf("  seed       : %d\n", opt$seed))
 cat(sprintf("  mode       : %s\n", opt$mode))
 cat("\n")
 
+# ---- Idempotent post-install of Bioconductor packages -----------------------
+# The Wave image for PREP_R_CICERO only ships the R 4.4.3 + Bioconductor-base
+# layer (Biobase / IRanges / GenomicRanges / S4Vectors / SummarizedExperiment /
+# DelayedArray). The pipeline-specific Bioconductor packages (cicero, monocle3,
+# EnsDb.Mmusculus.v79) are NOT pre-installed in the image; they are pulled in
+# here on first use, then cached on the image filesystem for subsequent runs of
+# the same task hash. BiocManager is already shipped by the Wave image, so the
+# CRAN step is a no-op there.
+ensure_bioc_packages <- function(pkgs, version = "3.19") {
+  missing <- pkgs[!vapply(pkgs, function(p) {
+    nzchar(system.file(package = p))
+  }, logical(1))]
+  if (length(missing) == 0) {
+    cat(sprintf("[post-install] all Bioconductor packages present: %s\n",
+                paste(pkgs, collapse = ", ")))
+    return(invisible(NULL))
+  }
+  cat(sprintf("[post-install] missing Bioconductor packages: %s\n",
+              paste(missing, collapse = ", ")))
+  if (!requireNamespace("BiocManager", quietly = TRUE)) {
+    cat("[post-install] BiocManager not found, installing from CRAN...\n")
+    install.packages("BiocManager", repos = "https://cloud.r-project.org")
+  }
+  BiocManager::install(missing, update = FALSE, ask = FALSE, version = version)
+  invisible(NULL)
+}
+
+ensure_bioc_packages(c("cicero", "monocle3", "EnsDb.Mmusculus.v79"))
+
 # ---- Helpers ----------------------------------------------------------------
 detect_mode <- function(requested) {
   if (requested != "auto") return(requested)

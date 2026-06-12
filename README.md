@@ -39,8 +39,9 @@ the 10x Multiome Mouse Brain Alzheimer's AppNote):
 bash  data_demo/download_data.sh        # ~30 min, ~6.5 GB into data_demo/raw/
 python data_demo/subsample_dataset.py   # ~10 min, produces data_demo/processed/
 
-# 2) Pull or build the container image
-docker pull ghcr.io/dmouzo/scmultiome-grn:latest
+# 2) Pull the Python container (R-side images come from Sequera Wave on the fly)
+docker login ghcr.io                                    # one-time
+docker pull ghcr.io/damouzo/pals-python-grn:1.0.0
 
 # 3) Run the full pipeline
 nextflow run main.nf -profile test,docker

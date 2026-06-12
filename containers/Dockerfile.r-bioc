@@ -1,21 +1,23 @@
 # ==============================================================================
-# Dockerfile — R-side cicero (PREP_R_CICERO)
+# Dockerfile — R-side cicero (PREP_R_CICERO) [LEGACY]
 # ==============================================================================
 #
-# This Dockerfile is consumed by Sequera Containers (Wave) to build the
-# `pals-r-bioc:1.0.0` image that runs the PREP_R_CICERO process.
+# *** LEGACY / NOT IN USE ***
+# This Dockerfile is no longer consumed by the pipeline. The R-side image for
+# PREP_R_CICERO is now materialised on the fly by Sequera Wave from the ORAS
+# link declared in nextflow.config (params.container_r2):
 #
-# Source of truth:  containers/env-r-bioc.yml
-# Image registry:  cr.seqera.io/dmouzo/pals-r-bioc:1.0.0
-# Used by:         modules/local/prep_r_cicero.nf  (params.container_r2)
+#   oras://community.wave.seqera.io/library/python_r-base_r-essentials_r-remotes_pruned:ffe857cbb37c1f02
 #
-# Build context expected by Wave:
-#   containers/
-#     env-r-bioc.yml
-#     Dockerfile.r-bioc         <-- this file
+# The corresponding conda spec (env-r-bioc.yml, this directory) is also kept
+# for historical reference only. cicero + monocle3 + EnsDb.Mmusculus.v79 are no
+# longer baked into the image; they are installed at runtime by
+# bin/GRN_cicero.R so the Wave solver stays tractable. See AGENTS.md ->
+# "Container & CI/CD" for details.
 #
-# Post-conda RUN installs the Bioconductor-only packages that conda cannot
-# resolve: cicero, monocle3, EnsDb.Mmusculus.v79, and BiocManager.
+# DO NOT remove this file without coordinating with AGENTS.md: it documents the
+# historical R 4.4.3 + Bioconductor 3.19 + cicero + monocle3 +
+# EnsDb.Mmusculus.v79 environment that the pipeline was designed against.
 # ==============================================================================
 
 FROM mambaorg/micromamba:1.5.10-jammy

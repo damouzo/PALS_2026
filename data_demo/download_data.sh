@@ -139,7 +139,8 @@ printf ' Target dir : %s\n' "${TARGET_DIR}"
 printf ' Base URL   : %s\n' "${BASE_URL}"
 printf ' HTTP client: %s\n' "$([ "${have_curl}" -eq 1 ] && echo 'curl' || echo 'wget')"
 printf ' Force mode : %s\n' "$([ "${FORCE}" -eq 1 ] && echo 'YES (re-download all)' || echo 'NO (skip existing)')"
-printf '-----------------------------------------------------------\n'
+printf '%s' '-----------------------------------------------------------'
+printf '\n'
 
 mkdir -p "${TARGET_DIR}"
 
@@ -192,9 +193,11 @@ done
 # ------------------------------------------------------------------------------
 # Post-flight validation
 # ------------------------------------------------------------------------------
-printf '\n-----------------------------------------------------------\n'
+printf '\n%s' '-----------------------------------------------------------'
+printf '\n'
 printf ' Post-download validation\n'
-printf '-----------------------------------------------------------\n'
+printf '%s' '-----------------------------------------------------------'
+printf '\n'
 all_ok=1
 for entry in "${ASSETS[@]}"; do
     fname="${entry%%|*}"
@@ -224,6 +227,7 @@ printf ' Skipped    : %d file(s)\n' "${SKIPPED}"
 printf ' Total size : %s\n' "$(human_size "${TOTAL_BYTES}")"
 printf ' Elapsed    : %d second(s)\n' "${ELAPSED}"
 printf ' Target     : %s\n' "${TARGET_DIR}"
-printf '-----------------------------------------------------------\n'
+printf '%s' '-----------------------------------------------------------'
+printf '\n'
 printf ' Next step  : python data_demo/subsample_dataset.py\n'
 printf '===========================================================\n\n'

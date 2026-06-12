@@ -11,7 +11,7 @@
 //               Runtime: a Python-only container that ships with Python 3.11
 //               + celloracle 0.18.0 + scanpy + anndata + gimmemotifs. The
 //               default image is published on Seqera Containers
-//               (cr.seqera.io/dmouzo/pals-python-grn) but can be overridden
+//               (ghcr.io/damouzo/pals-python-grn) but can be overridden
 //               via --container_py <url>.
 //
 // Inputs:       tuple path(peaks),

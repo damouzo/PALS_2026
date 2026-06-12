@@ -97,7 +97,7 @@
   - [x] `process PREPROCESS_ATAC` with `tag "ATAC_preprocess"`.
   - [x] `publishDir "${params.outdir}/preprocess_atac", mode: 'copy'`.
   - [x] `label 'process_medium'`.
-  - [x] `container 'ghcr.io/dmouzo/scmultiome-grn:${params.container_tag}'`.
+  - [x] `container 'ghcr.io/damouzo/pals-python-grn:1.0.0'`.
   - [x] `input: path input_rds`.
   - [x] `output: tuple path("all_peaks.csv"), path("cicero_connections.csv"), path("rna.h5ad"), path("atac.h5ad"), emit: preproc`.
   - [x] `script: "Rscript ..."` with `--input_seurat` and `--outdir`.

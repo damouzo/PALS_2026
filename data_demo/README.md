@@ -146,16 +146,22 @@ to `wget` automatically.
 ### 7.3 Step 2 — Subsample to a microglia-focused dataset
 
 ```bash
-# Run inside the scMultiome-GRN container (scanpy/anndata/R are preinstalled):
+# Run inside the Python GRN container (scanpy/anndata are preinstalled):
+docker login ghcr.io                                    # one-time
 docker run --rm \
+    -u $(id -u):$(id -g) \
+    -e HOME=/tmp \
+    -e MPLCONFIGDIR=/tmp/matplotlib \
+    -e NUMBA_CACHE_DIR=/tmp/numba_cache \
+    -e XDG_CACHE_HOME=/tmp/xdg \
     -v $(pwd)/data_demo:/workspace/data_demo \
     -w /workspace \
-    ghcr.io/dmouzo/scmultiome-grn:latest \
+    ghcr.io/damouzo/pals-python-grn:1.0.0 \
     python /workspace/data_demo/subsample_dataset.py
 
-# Or, with a local Conda environment matching containers/environment.yml:
-mamba env create -f containers/environment.yml
-mamba activate scMultiome-GRN
+# Or, with a local venv:
+python -m venv .venv && source .venv/bin/activate
+pip install numpy pandas scipy scanpy anndata h5py
 python data_demo/subsample_dataset.py
 
 # Or, with plain pip on a developer laptop:
@@ -164,6 +170,19 @@ python data_demo/subsample_dataset.py --no-rds   # skip Seurat conversion
 
 # Scale up or down uniformly:
 python data_demo/subsample_dataset.py --cells-per-cohort 300
+```
+
+> **Memory budget**: the full 10x multiome matrix (33k cells x 99k features,
+> sparse CSR) peaks at ~1.8 GB RSS. On a laptop with < 4 GB free RAM this
+> step will be OOM-killed. In that case, run the subsample on a real HPC
+> node (Apocrita, SLURM) and copy the produced `.rds` back to the laptop:
+>
+> ```bash
+> # On the HPC, after data_demo/download_data.sh has populated data_demo/raw/
+> sbatch data_demo/subsample_apocrita.sh        # see script for resource caps
+> scp ${HOSTNAME}:data_demo/processed/microglia_dam_demo.rds \
+>     data_demo/processed/
+> ```
 
 # Use a fully custom design:
 python data_demo/subsample_dataset.py --cohorts my_cohorts.yaml

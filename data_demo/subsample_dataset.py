@@ -178,6 +178,10 @@ def _import_heavy() -> Dict[str, Any]:
             if modname in ("sparse",):
                 from scipy import sparse as _sp
                 _HEAVY[modname] = _sp
+            elif modname in ("sc",):
+                # scanpy is conventionally imported as `sc`; resolve the
+                # real module name and store it under the alias key.
+                _HEAVY[modname] = __import__("scanpy")
             elif modname in ("numpy", "pandas", "anndata", "h5py"):
                 _HEAVY[modname] = __import__(modname)
             else:
@@ -188,9 +192,10 @@ def _import_heavy() -> Dict[str, Any]:
         log.error("Missing required Python packages: " + ", ".join(missing))
         log.error("Install them with:")
         log.error("    pip install " + " ".join(missing))
-        log.error("Or run this script inside the scMultiome-GRN container:")
-        log.error("    docker run --rm -v $(pwd):/workspace \\")
-        log.error("        ghcr.io/dmouzo/scmultiome-grn:latest \\")
+        log.error("Or run this script inside the Python GRN container:")
+        log.error("    docker login ghcr.io                                    # one-time")
+        log.error("    docker run --rm -u $(id -u):$(id -g) -v $(pwd):/workspace \\")
+        log.error("        ghcr.io/damouzo/pals-python-grn:1.0.0 \\")
         log.error("        python /workspace/data_demo/subsample_dataset.py")
         sys.exit(1)
     return _HEAVY
@@ -328,7 +333,7 @@ def load_h5(h5_path: Path):
     if "feature_types" not in adata.var.columns:
         log.error("H5 lacks 'feature_types' column. Not a 10x multiome H5?")
         sys.exit(1)
-    adata.var["modality"] = adata.var["feature_types"].map({
+    adata.var["modality"] = adata.var["modality"].fillna("Unknown") if "modality" in adata.var.columns else adata.var["feature_types"].map({
         "Gene Expression": "RNA",
         "Peaks":          "ATAC",
     }).fillna("Unknown")

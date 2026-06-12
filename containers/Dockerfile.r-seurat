@@ -1,21 +1,22 @@
 # ==============================================================================
-# Dockerfile — R-side preprocessing (PREP_R_SEURAT)
+# Dockerfile — R-side preprocessing (PREP_R_SEURAT) [LEGACY]
 # ==============================================================================
 #
-# This Dockerfile is consumed by Sequera Containers (Wave) to build the
-# `pals-r-seurat:1.0.0` image that runs the PREP_R_SEURAT process.
+# *** LEGACY / NOT IN USE ***
+# This Dockerfile is no longer consumed by the pipeline. The R-side image for
+# PREP_R_SEURAT is now materialised on the fly by Sequera Wave from the ORAS
+# link declared in nextflow.config (params.container_r1):
 #
-# Source of truth:  containers/env-r-seurat.yml
-# Image registry:  cr.seqera.io/dmouzo/pals-r-seurat:1.0.0
-# Used by:         modules/local/prep_r_seurat.nf  (params.container_r1)
+#   oras://community.wave.seqera.io/library/python_r-base_r-essentials_r-devtools_pruned:79376aa02ef4e2df
 #
-# Build context expected by Wave:
-#   containers/
-#     env-r-seurat.yml
-#     Dockerfile.r-seurat       <-- this file
+# The corresponding conda spec (env-r-seurat.yml, this directory) is also kept
+# for historical reference only. Signac + SeuratDisk are no longer baked into
+# the image; they are installed at runtime by bin/GRN_seurat.R so the Wave
+# solver stays tractable. See AGENTS.md -> "Container & CI/CD" for details.
 #
-# Post-conda RUN steps install the Bioconductor-only packages that conda cannot
-# resolve (Signac, BiocManager) and the frozen SeuratDisk CRAN version.
+# DO NOT remove this file without coordinating with AGENTS.md: it documents the
+# historical R 4.4.3 + Seurat 5.4.0 + Signac 1.14.0 + SeuratDisk 0.0.9019
+# environment that the pipeline was designed against.
 # ==============================================================================
 
 FROM mambaorg/micromamba:1.5.10-jammy

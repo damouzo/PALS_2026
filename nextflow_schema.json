@@ -92,18 +92,18 @@
         },
         "container_r1": {
             "type": "string",
-            "description": "Container image URL for the first R-side process (PREP_R_SEURAT: scRNA + scATAC preprocessing with Seurat + Signac + SeuratDisk). Default points to the Sequera Wave image cr.seqera.io/dmouzo/pals-r-seurat:1.0.0 which ships R 4.4.3 + Seurat 5.4.0 + Signac 1.14.0 + SeuratDisk 0.0.9019 + utility R packages. Override with any container:// or docker:// URL.",
-            "default": "docker://cr.seqera.io/dmouzo/pals-r-seurat:1.0.0"
+            "description": "Container reference for the first R-side process (PREP_R_SEURAT: scRNA + scATAC preprocessing with Seurat + Signac + SeuratDisk). Default is a Sequera Wave ORAS link (oras://community.wave.seqera.io/library/...:79376aa02ef4e2df) materialised on the fly by Wave; the image ships R 4.4.3 + R-essentials + R-devtools + tidyverse + r-seurat 5.4.0 + hdf5r + optparse + the Bioconductor base classes. Signac + SeuratDisk are installed at runtime by bin/GRN_seurat.R. Override with any container://, docker://, or oras:// URL.",
+            "default": "oras://community.wave.seqera.io/library/python_r-base_r-essentials_r-devtools_pruned:79376aa02ef4e2df"
         },
         "container_r2": {
             "type": "string",
-            "description": "Container image URL for the second R-side process (PREP_R_CICERO: Cicero co-accessibility with cicero + monocle3 + EnsDb.Mmusculus.v79). Default points to the Sequera Wave image cr.seqera.io/dmouzo/pals-r-bioc:1.0.0 which ships R 4.4.3 + Bioconductor 3.19 + cicero + monocle3 + EnsDb.Mmusculus.v79. Override with any container:// or docker:// URL.",
-            "default": "docker://cr.seqera.io/dmouzo/pals-r-bioc:1.0.0"
+            "description": "Container reference for the second R-side process (PREP_R_CICERO: Cicero co-accessibility with cicero + monocle3 + EnsDb.Mmusculus.v79). Default is a Sequera Wave ORAS link (oras://community.wave.seqera.io/library/...:ffe857cbb37c1f02) materialised on the fly by Wave; the image ships R 4.4.3 + R-essentials + R-remotes + the Bioconductor base classes. cicero + monocle3 + EnsDb.Mmusculus.v79 are installed at runtime by bin/GRN_cicero.R. Override with any container://, docker://, or oras:// URL.",
+            "default": "oras://community.wave.seqera.io/library/python_r-base_r-essentials_r-remotes_pruned:ffe857cbb37c1f02"
         },
         "container_py": {
             "type": "string",
-            "description": "Container image URL for the Python-side process (INFER_GRN: CellOracle + GimmeMotifs). Default points to the GHCR image ghcr.io/dmouzo/pals-python-grn:1.0.0 which is a re-tag of kenjikamimoto126/celloracle_ubuntu:0.18.0 (CellOracle 0.18.0 + scanpy + anndata + gimmemotifs + goatools + adjustText). Override with any container:// or docker:// URL.",
-            "default": "docker://ghcr.io/dmouzo/pals-python-grn:1.0.0"
+            "description": "Container image URL for the Python-side process (INFER_GRN: CellOracle + GimmeMotifs). Default points to the GitHub Container Registry image ghcr.io/damouzo/pals-python-grn:1.0.0 which is a re-tag of kenjikamimoto126/celloracle_ubuntu:0.18.0 (CellOracle 0.18.0 + scanpy + anndata + gimmemotifs + goatools + adjustText). May be private — requires docker login ghcr.io (or for the upstream tag docker pull kenjikamimoto126/celloracle_ubuntu:0.18.0). Override with any container:// or docker:// URL.",
+            "default": "docker://ghcr.io/damouzo/pals-python-grn:1.0.0"
         },
         "container_r": {
             "type": ["string", "null"],
